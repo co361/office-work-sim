@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오피스 업무 시뮬레이션 — 관리자</title>
+<style>
+:root{--navy:#243b63;--blue:#3b6fd4;--ink:#1c2333;--sub:#5b6474;--line:#dde2ea;
+  --ok:#2e9e6b;--warn:#e0a13c;--bad:#d6564f;--mono:'SF Mono','Consolas',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Apple SD Gothic Neo','Pretendard','Malgun Gothic',sans-serif;color:var(--ink);
+  background:#eef1f6;min-height:100vh}
+header{background:var(--navy);color:#fff;padding:16px 26px;display:flex;align-items:center;gap:14px}
+header h1{font-size:17px;font-weight:800}
+header .sub{font-size:12px;color:#9db0d2}
+header .right{margin-left:auto;font-size:12px;color:#9db0d2}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 18px 60px}
+.card{background:#fff;border-radius:14px;border:1px solid var(--line);padding:22px 24px;margin-bottom:18px}
+.card h2{font-size:15px;margin-bottom:14px}
+label{display:block;font-size:12px;font-weight:700;color:var(--sub);margin-bottom:5px}
+input,select{border:1.5px solid #cfd6e2;border-radius:8px;padding:10px 12px;font-size:13.5px;
+  font-family:inherit;outline:none;background:#fff}
+input:focus{border-color:var(--blue)}
+button{border:none;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.btn-p{background:var(--blue);color:#fff} .btn-p:hover{background:#2f5fc0}
+.btn-s{background:#e8edf6;color:#31456f} .btn-s:hover{background:#dbe3f2}
+.btn-g{background:var(--ok);color:#fff}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.row>div{display:flex;flex-direction:column}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+th{background:#f4f6fa;text-align:left;padding:9px 11px;font-size:11.5px;color:var(--sub);
+  border-bottom:1.5px solid var(--line);position:sticky;top:0}
+td{padding:9px 11px;border-bottom:1px solid #eef1f6}
+tr:hover td{background:#f8faff}
+.tag{font-size:11px;font-weight:800;border-radius:5px;padding:2px 8px}
+.t-unused{background:#e8edf6;color:#31456f}.t-active{background:#fdf3e3;color:#8a5f1e}
+.t-used{background:#e7f5ee;color:#1d6b46}.t-revoked{background:#fdecea;color:var(--bad)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.note{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7}
+#login{max-width:440px;margin:80px auto}
+.hide{display:none}
+.stat{display:inline-block;background:#f4f6fa;border-radius:9px;padding:8px 14px;margin-right:8px;font-size:12.5px}
+.stat b{font-family:var(--mono)}
+.keylist{background:#0f1729;color:#cfe0ff;border-radius:10px;padding:14px 16px;font-family:var(--mono);
+  font-size:13px;line-height:2;max-height:260px;overflow-y:auto;margin-top:12px;white-space:pre}
+.scroll{max-height:460px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+dialog{border:none;border-radius:14px;padding:0;max-width:640px;width:92vw;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+dialog::backdrop{background:rgba(10,15,26,.5)}
+.dl-head{background:var(--navy);color:#fff;padding:14px 20px;font-weight:800;font-size:14px;
+  display:flex;justify-content:space-between}
+.dl-head button{background:rgba(255,255,255,.15);color:#fff;padding:3px 12px;font-size:12px}
+.dl-body{padding:18px 22px;max-height:70vh;overflow-y:auto;font-size:13.5px;line-height:1.8}
+.dl-body h4{font-size:13px;margin:12px 0 5px;color:var(--blue)}
+.dl-body ul{margin-left:18px}
+.skillbar{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.skillbar span{width:150px;font-size:12px;color:var(--sub)}
+.skillbar .bar{flex:1;height:8px;background:#eef1f6;border-radius:4px;overflow:hidden}
+.skillbar .fill{height:100%;background:linear-gradient(90deg,#4d7fe0,#8fb4ff)}
+.skillbar b{width:36px;text-align:right;font-family:var(--mono);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🗂 업무 시뮬레이션 관리자</h1><span class="sub">edmakers 교육 운영 콘솔</span>
+  <span class="right" id="hdInfo"></span>
+</header>
+
+<!-- ===== 로그인 ===== -->
+<div class="wrap" id="login">
+  <div class="card">
+    <h2>관리자 접속</h2>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div id="urlRow" style="display:none"><label>백엔드 URL (Apps Script 웹 앱)</label>
+        <input id="inUrl" style="width:100%" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div><label>관리자 비밀번호</label>
+        <input id="inPw" type="password" style="width:100%" placeholder="Code.gs의 ADMIN_SECRET"></div>
+      <button class="btn-p" id="btnLogin">접속</button>
+      <div class="note" id="loginMsg">비밀번호는 이 브라우저에 저장됩니다. Enter로 바로 접속할 수 있어요.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 메인 ===== -->
+<div class="wrap hide" id="main">
+
+  <div class="card">
+    <h2>① 접속 키 발급 (그룹/대학교별)</h2>
+    <div class="row">
+      <div><label>그룹명 (대학교)</label><input id="isGroup" placeholder="예: 조선대" style="width:180px"></div>
+      <div><label>발급 수량</label><input id="isCount" type="number" value="30" min="1" max="300" style="width:100px"></div>
+      <div><label>유효시간 (활성화 후, 분)</label><input id="isValid" type="number" value="180" min="30" style="width:140px"></div>
+      <div><label>직급 트랙</label><select id="isRank" style="width:150px">
+        <option value="">학생 선택</option><option value="jr">신입사원</option>
+        <option value="mid">주임·대리</option><option value="mgr">팀장(관리자)</option></select></div>
+      <div><label>부서</label><select id="isDept" style="width:140px">
+        <option value="">학생 선택</option><option value="mgmt">경영지원팀</option>
+        <option value="hr">인사팀</option><option value="ga">총무팀</option><option value="cs">고객지원팀</option></select></div>
+      <div><label>조직문화</label><select id="isCult" style="width:130px">
+        <option value="">학생 선택</option><option value="v">수직적</option><option value="h">수평적</option></select></div>
+      <button class="btn-p" id="btnIssue">키 발급</button>
+    </div>
+    <div class="note">키는 <b>1회용</b>입니다. 플레이어가 입장하면 활성화되고, 보고서 제출 시 사용 완료 처리됩니다.
+      유효시간 내 새로고침 재접속은 허용됩니다.</div>
+    <div id="issueOut" class="hide">
+      <div class="keylist" id="issuedKeys"></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn-s" id="btnCopyKeys">전체 복사</button>
+        <button class="btn-s" id="btnKeysCsv">키 목록 CSV 다운로드</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>② 키 현황</h2>
+    <div class="row">
+      <div><label>그룹 필터</label><select id="kFilter" style="width:200px"><option value="">전체</option></select></div>
+      <button class="btn-s" id="btnKeyRefresh">새로고침</button>
+      <span id="kStats"></span>
+    </div>
+    <div class="scroll"><table id="kTable">
+      <thead><tr><th>키</th><th>그룹</th><th>설정</th><th>상태</th><th>플레이어</th><th>시작</th><th>유효(분)</th><th></th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>③ 성과 보고서</h2>
+    <div class="row">
+      <div><label>그룹 필터</label><select id="rFilter" style="width:200px"><option value="">전체</option></select></div>
+      <button class="btn-s" id="btnRepRefresh">새로고침</button>
+      <button class="btn-g" id="btnRepCsv">📥 이 그룹 보고서 CSV 일괄 다운로드</button>
+      <button class="btn-s" id="btnRepJson">JSON 전체 다운로드</button>
+    </div>
+    <div class="note">CSV에는 종합점수·등급과 6개 역량 점수가 열로 포함됩니다. 행을 클릭하면 상세 보고서를 볼 수 있습니다.</div>
+    <div id="rStats" style="display:none;margin-top:14px;padding:16px 18px;background:#f8faff;border:1px solid var(--line);border-radius:10px">
+      <div id="rStatsHead" style="font-size:13px;font-weight:800;margin-bottom:10px"></div>
+      <div style="display:flex;gap:26px;flex-wrap:wrap">
+        <div id="rStatsNums" style="min-width:180px"></div>
+        <div id="rStatsSkills" style="flex:1;min-width:280px"></div>
+      </div>
+      <div id="rStatsRank" style="margin-top:16px"></div>
+    </div>
+    <div class="scroll"><table id="rTable">
+      <thead><tr><th>이름</th><th>그룹</th><th>부서</th><th>직급</th><th>조직문화</th><th>총점</th><th>등급</th><th>처리/도착</th><th>제출 시각</th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <div class="dl-head"><span id="dlTitle">상세 보고서</span><button onclick="dlg.close()">닫기 ✕</button></div>
+  <div class="dl-body" id="dlBody"></div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+/* 배포된 백엔드 주소 내장 — 로그인은 비밀번호만. (백엔드를 새로 배포하면 이 값만 교체) */
+const DEFAULT_BACKEND = 'https://script.google.com/macros/s/AKfycbz1Maer5DG-2I2Tl1cJTZ6kCr5lhYN97w6UJUllrqaepGsRN2XvN0m2NPd4IxdGNs5X/exec';
+let CFG = {url: localStorage.getItem('sim_url')||DEFAULT_BACKEND, pw: localStorage.getItem('sim_pw')||''};
+let KEYS = [], REPORTS = [];
+const SKILL_ORDER = ['우선순위 · 시간 관리','문제해결 · 상황판단','업무 커뮤니케이션','위임과 자원 배분','정보 파악 · 정확성','압박 상황 대처'];
+
+async function api(payload){
+  const res = await fetch(CFG.url, {method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(Object.assign({admin:CFG.pw}, payload))});
+  return await res.json();
+}
+function dl(filename, text, mime){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff'+text], {type: mime||'text/plain;charset=utf-8'}));
+  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+function csvEsc(v){ v = String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+
+/* ---------- 로그인 ---------- */
+$('inUrl').value = CFG.url; $('inPw').value = CFG.pw;
+if(!DEFAULT_BACKEND) $('urlRow').style.display = '';   // 내장 주소가 없을 때만 URL 입력칸 노출
+$('inPw').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btnLogin').click(); });
+$('btnLogin').onclick = async ()=>{
+  CFG.url = ($('inUrl').value.trim()) || DEFAULT_BACKEND; CFG.pw = $('inPw').value;
+  $('loginMsg').textContent = '접속 확인 중…';
+  try{
+    const r = await api({action:'listKeys'});
+    if(!r.ok){ $('loginMsg').textContent = '⚠ ' + (r.error||'인증 실패'); return; }
+    localStorage.setItem('sim_url', CFG.url); localStorage.setItem('sim_pw', CFG.pw);
+    $('login').classList.add('hide'); $('main').classList.remove('hide');
+    $('hdInfo').textContent = new URL(CFG.url).host;
+    KEYS = r.rows; renderKeys(); loadReports();
+  }catch(e){ $('loginMsg').textContent = '⚠ 서버 연결 실패 — URL을 확인하세요. ('+e+')'; }
+};
+
+/* ---------- 키 발급 ---------- */
+let lastIssued = [];
+$('btnIssue').onclick = async ()=>{
+  const group = $('isGroup').value.trim();
+  if(!group){ alert('그룹명을 입력하세요'); return; }
+  $('btnIssue').disabled = true; $('btnIssue').textContent = '발급 중…';
+  const config = {rank:$('isRank').value, dept:$('isDept').value, cult:$('isCult').value};
+  const r = await api({action:'issue', group, count:+$('isCount').value, validMinutes:+$('isValid').value, config});
+  $('btnIssue').disabled = false; $('btnIssue').textContent = '키 발급';
+  if(!r.ok){ alert(r.error); return; }
+  lastIssued = r.keys;
+  $('issueOut').classList.remove('hide');
+  $('issuedKeys').textContent = r.keys.join('\n');
+  loadKeys();
+};
+$('btnCopyKeys').onclick = ()=>{ navigator.clipboard.writeText(lastIssued.join('\n')); $('btnCopyKeys').textContent='복사됨 ✓'; setTimeout(()=>$('btnCopyKeys').textContent='전체 복사',1500); };
+$('btnKeysCsv').onclick = ()=>{
+  dl(($('isGroup').value||'keys')+'_접속키.csv',
+     '접속키,그룹\n' + lastIssued.map(k=>k+','+$('isGroup').value).join('\n'), 'text/csv');
+};
+
+/* ---------- 키 현황 ---------- */
+async function loadKeys(){
+  const r = await api({action:'listKeys'});
+  if(r.ok){ KEYS = r.rows; renderKeys(); }
+}
+$('btnKeyRefresh').onclick = loadKeys;
+$('kFilter').onchange = renderKeys;
+function renderKeys(){
+  const groups = [...new Set(KEYS.map(k=>k.group))];
+  fillGroups($('kFilter'), groups); fillGroups($('rFilter'), [...new Set(REPORTS.map(r=>r.group).concat(groups))]);
+  const g = $('kFilter').value;
+  const rows = KEYS.filter(k=>!g || k.group===g);
+  const st = s => rows.filter(k=>k.status===s).length;
+  $('kStats').innerHTML = '<span class="stat">전체 <b>'+rows.length+'</b></span><span class="stat">미사용 <b>'+st('unused')+'</b></span><span class="stat">진행 중 <b>'+st('active')+'</b></span><span class="stat">완료 <b>'+st('used')+'</b></span>';
+  const RN={jr:'신입',mid:'대리',mgr:'팀장'}, DN={mgmt:'경영지원',hr:'인사',ga:'총무',cs:'고객지원'}, CN={v:'수직',h:'수평'};
+  const cfgLabel = k=>{ const c=safe(k.config); const parts=[RN[c.rank],DN[c.dept],CN[c.cult]].filter(Boolean); return parts.length?parts.join('·'):'학생 선택'; };
+  $('kTable').querySelector('tbody').innerHTML = rows.map(k=>
+    '<tr><td class="mono">'+k.key+'</td><td>'+k.group+'</td><td style="font-size:12px">'+cfgLabel(k)+'</td>'+
+    '<td><span class="tag t-'+k.status+'">'+({unused:'미사용',active:'진행 중',used:'완료',revoked:'회수됨'}[k.status]||k.status)+'</span></td>'+
+    '<td>'+(k.playerName||'—')+'</td><td class="mono">'+(k.startedAt?String(k.startedAt).slice(0,16).replace('T',' '):'—')+'</td>'+
+    '<td class="mono">'+k.validMinutes+'</td>'+
+    '<td>'+(k.status!=='used'?'<button class="btn-s" style="padding:4px 10px;font-size:11px" onclick="revoke(\''+k.key+'\')">회수</button>':'')+'</td></tr>'
+  ).join('');
+}
+function fillGroups(sel, groups){
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">전체</option>' + groups.filter(Boolean).map(g=>'<option>'+g+'</option>').join('');
+  sel.value = cur;
+}
+async function revoke(key){
+  if(!confirm(key+' 키를 회수(무효화)할까요?')) return;
+  await api({action:'revoke', key}); loadKeys();
+}
+
+/* ---------- 보고서 ---------- */
+async function loadReports(){
+  const r = await api({action:'listReports'});
+  if(r.ok){ REPORTS = r.rows; renderReports(); }
+}
+$('btnRepRefresh').onclick = loadReports;
+$('rFilter').onchange = renderReports;
+function repFiltered(){
+  const g = $('rFilter').value;
+  return REPORTS.filter(r=>!g || r.group===g);
+}
+function renderStats(rows){
+  const box = $('rStats');
+  if(!rows.length){ box.style.display='none'; return; }
+  box.style.display='block';
+  const g = $('rFilter').value || '전체';
+  const nums = rows.map(r=>+r.total||0);
+  const avg = a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):0;
+  const grades = {};
+  rows.forEach(r=>{ grades[r.grade]=(grades[r.grade]||0)+1; });
+  $('rStatsHead').textContent = '📊 '+g+' 그룹 통계 — '+rows.length+'명';
+  $('rStatsNums').innerHTML =
+    '<div class="stat">평균 총점 <b>'+avg(nums)+'</b></div>'+
+    '<div class="stat">최고 <b>'+Math.max(...nums)+'</b> · 최저 <b>'+Math.min(...nums)+'</b></div>'+
+    '<div style="margin-top:10px">'+['A','B','C','D','F'].filter(k=>grades[k])
+      .map(k=>'<span class="tag t-'+(k==='A'?'used':k==='B'?'unused':'active')+'" style="margin-right:5px">'+k+' × '+grades[k]+'</span>').join('')+'</div>';
+  $('rStatsSkills').innerHTML = SKILL_ORDER.map(n=>{
+    const v = avg(rows.map(r=>+(safe(r.skills)[n]||0)));
+    return '<div class="skillbar"><span>'+n+'</span><div class="bar"><div class="fill" style="width:'+v+'%"></div></div><b>'+v+'</b></div>';
+  }).join('');
+  /* 🏆 그룹 내 최종 순위 — 총점 → 문제해결지수 → 제출 시각 순 (강사 모니터용, 새로고침으로 갱신) */
+  const ranked = rows.slice().sort((a,b)=>
+    ((+b.total||0)-(+a.total||0)) ||
+    ((safe(b.detail).psScore||0)-(safe(a.detail).psScore||0)) ||
+    String(a.submittedAt).localeCompare(String(b.submittedAt)));
+  const medal = i => i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)+'등';
+  $('rStatsRank').innerHTML =
+    '<b style="font-size:13px">🏆 '+g+' 최종 순위 ('+ranked.length+'명 제출 기준 — 진행 중엔 새로고침)</b>'+
+    '<table style="margin-top:8px"><thead><tr><th style="width:60px">순위</th><th>이름</th><th>부서</th><th>총점</th><th>등급</th><th>문제해결</th><th>제출</th></tr></thead><tbody>'+
+    ranked.map((r,i)=>'<tr><td style="font-weight:800">'+medal(i)+'</td><td><b>'+r.name+'</b></td><td>'+r.dept+'</td>'+
+      '<td class="mono"><b>'+r.total+'</b></td><td class="mono">'+r.grade+'</td>'+
+      '<td class="mono">'+(safe(r.detail).psScore!=null?safe(r.detail).psScore:'—')+'</td>'+
+      '<td class="mono">'+String(r.submittedAt).slice(11,16)+'</td></tr>').join('')+
+    '</tbody></table>';
+}
+function renderReports(){
+  fillGroups($('rFilter'), [...new Set(REPORTS.map(r=>r.group))]);
+  const rows = repFiltered();
+  renderStats(rows);
+  $('rTable').querySelector('tbody').innerHTML = rows.map((r,i)=>{
+    const d = safe(r.detail);
+    return '<tr onclick="showDetail('+i+')" style="cursor:pointer"><td><b>'+r.name+'</b></td><td>'+r.group+'</td><td>'+r.dept+'</td><td>'+r.culture+'</td>'+
+    '<td class="mono"><b>'+r.total+'</b></td><td class="mono">'+r.grade+'</td>'+
+    '<td class="mono">'+(d.doneCount!=null? d.doneCount+'/'+d.arrivedCount : '—')+'</td>'+
+    '<td class="mono">'+String(r.submittedAt).slice(0,16).replace('T',' ')+'</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="color:#8b93a5;text-align:center;padding:26px">보고서가 없습니다</td></tr>';
+}
+function safe(s){ try{ return JSON.parse(s)||{}; }catch(e){ return {}; } }
+function showDetail(i){
+  const r = repFiltered()[i], sk = safe(r.skills), d = safe(r.detail);
+  $('dlTitle').textContent = r.name + ' — ' + r.group + ' 상세 보고서';
+  let h = '<div style="font-size:13px;color:#5b6474;margin-bottom:12px">'+r.dept+' · '+r.culture+' · 총점 <b style="font-size:17px;color:#1c2333">'+r.total+'</b> ('+r.grade+' 등급) · 처리 '+ (d.doneCount||0)+'/'+(d.arrivedCount||0)+'건</div>';
+  h += SKILL_ORDER.map(n=>'<div class="skillbar"><span>'+n+'</span><div class="bar"><div class="fill" style="width:'+(sk[n]||0)+'%"></div></div><b>'+(sk[n]||0)+'</b></div>').join('');
+  const list = (t,arr)=> arr&&arr.length ? '<h4>'+t+'</h4><ul>'+arr.map(x=>'<li>'+(typeof x==='object'? (x.subj+' — '+x.score+(t.includes('작업')?'%':'점')) : x)+'</li>').join('')+'</ul>' : '';
+  h += list('이메일 첨삭', d.emails) + list('실무 작업 정확도', d.works) + list('잘한 점', d.goods) + list('개선점', d.fixes) + list('놓친 업무', d.missed);
+  $('dlBody').innerHTML = h;
+  $('dlg').showModal();
+}
+window.showDetail = showDetail; window.revoke = revoke;
+
+/* ---------- 일괄 다운로드 ---------- */
+$('btnRepCsv').onclick = ()=>{
+  const rows = repFiltered();
+  if(!rows.length){ alert('다운로드할 보고서가 없습니다'); return; }
+  const head = ['이름','그룹','부서','직급','조직문화','총점','등급','문제해결지수','처리건수','도착건수', ...SKILL_ORDER, '잘한점','개선점','제출시각'];
+  const lines = rows.map(r=>{
+    const sk = safe(r.skills), d = safe(r.detail);
+    return [r.name, r.group, r.dept, d.rank||'', r.culture, r.total, r.grade, d.psScore!=null?d.psScore:'', d.doneCount||'', d.arrivedCount||'',
+      ...SKILL_ORDER.map(n=>sk[n]!=null?sk[n]:''),
+      (d.goods||[]).join(' / '), (d.fixes||[]).join(' / '), r.submittedAt
+    ].map(csvEsc).join(',');
+  });
+  const g = $('rFilter').value || '전체';
+  dl('성과보고서_'+g+'_'+new Date().toISOString().slice(0,10)+'.csv', head.join(',')+'\n'+lines.join('\n'), 'text/csv');
+};
+$('btnRepJson').onclick = ()=>{
+  const rows = repFiltered().map(r=>Object.assign({}, r, {skills:safe(r.skills), detail:safe(r.detail)}));
+  const g = $('rFilter').value || '전체';
+  dl('성과보고서_'+g+'.json', JSON.stringify(rows, null, 2), 'application/json');
+};
+
+/* 자동 로그인 */
+if(CFG.url && CFG.pw) $('btnLogin').click();
+</script>
+</body>
+</html>
