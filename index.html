@@ -3122,7 +3122,7 @@ function loadPlayerWorkstation(){
     }).catch(()=>{});
   }).catch(()=>{ /* GLB 실패: 회색 절차 책상 폴백 유지 */ });
   loadGLB('chair.glb').then(chair=>{
-    placeModel(chair, {file:'chair.glb', pos:{x:0, z:0.66}, rotY:0, h:0.95, shadow:true});
+    placeModel(chair, {file:'chair.glb', pos:{x:0, z:0.66}, rotY:Math.PI, h:0.95, shadow:true});  // 등받이가 방 쪽(플레이어 뒤)을 향하도록 180° — 책상을 마주보는 착석 방향
     chair.userData.wsKey='player'; chair.userData.wsPart='chair';
   }).catch(()=>{});
 }
