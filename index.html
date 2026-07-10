@@ -2960,44 +2960,37 @@ function finishSit(rig){
   if(rig._curName !== 'sit_idle') rigAnim(rig, 'sit_idle', {timeScale: rig._sitTS||1, fade:0.3}); // 이미 재생 중이면 유지
   walkLock(false); G.talkActive = null; hintDefault();
 }
-/* T 키: 가장 가까운 착석 동료(2.5m 이내)에게 말 걸기 */
+/* T 키: 가장 가까운 착석 동료(2.8m 이내)에게 말 걸기 */
 function tryTalkNearest(){
   if(walk_locked || G.questActive || G.talkActive || anyOverlayOpen()) return;
-  let best=null, bestD=2.5;
-  for(const r of ANIMRIGS){
-    if(!r.seatKey || !r.seated || r.talkState) continue;
-    const d = Math.hypot(camPos.x - r.root.position.x, camPos.z - r.root.position.z);
-    if(d < bestD){ bestD = d; best = r; }
+  let best=null, bestD=SEAT_TALK_RANGE;
+  for(const key in SEATED){
+    const s = SEATED[key]; if(!s.obj) continue;
+    const d = Math.hypot(camPos.x - s.seat.x, camPos.z - s.seat.z);
+    if(d < bestD){ bestD = d; best = key; }
   }
-  if(best) startTalk(best.seatKey);
-  else toast('💬 대화', '동료 자리로 다가가(2.5m 이내) T 키를 누르거나, 동료를 직접 클릭하세요.', 't-quest');
+  if(best) startTalk(best);
+  else toast('💬 대화', '동료 자리로 다가가(2.8m 이내) T 키를 누르거나, 동료를 직접 클릭하세요.', 't-quest');
 }
-/* 게임 시작/종료 시 진행 중 대화 시퀀스를 즉시 원상 복구(자리에 앉힘) */
+/* 게임 시작/종료 시 대화 상태를 즉시 원상 복구(좌석 방향으로) */
 function resetTalkRigs(){
-  for(const r of ANIMRIGS){
-    if(!r.seatKey || (!r.talkState && r.seated)) continue;
-    r.talkState = null; r.moveTo = null; r.seated = true;
-    r.root.position.x = r.seatPos.x; r.root.position.z = r.seatPos.z;
-    r.root.rotation.y = r.seatRotY;
-    rigAnim(r, 'sit_idle', {offset: Math.random()*3, timeScale: r._sitTS||1, fade:0.1});
+  for(const key in SEATED){                          // 좌석 NPC: 회전을 착석 방향으로 리셋
+    const s = SEATED[key]; if(s.obj) s.obj.rotation.y = s.baseRotY;
   }
+  G.talkActive = null;
 }
 function startTalk(key){
   if(!key) return;
+  const s = SEATED[key]; if(!s) return;
   if(walk_locked || seatReturn || G.questActive || G.talkActive || anyOverlayOpen()) return;
-  if($('ovPC').classList.contains('open')) return;     // PC 사용 중엔 말 걸기 금지(pcSkip 저주기 렌더와 충돌 방지)
-  const rig = ANIMRIGS.find(r=>r.seatKey===key);
-  if(!rig || !rig.seated || rig.talkState) return;
+  if($('ovPC').classList.contains('open')) return;     // PC 사용 중엔 말 걸기 금지
+  // 근접 게이트: 걷기·기립·접근 없이, 가까이 있을 때만 제자리에서 대화
+  const d = Math.hypot(camPos.x - s.seat.x, camPos.z - s.seat.z);
+  if(d > SEAT_TALK_RANGE){ toast('💬 대화', '가까이 다가가서 말 거세요.', 't-quest'); return; }
   G.talkActive = key;
-  rig.seated = false;
-  rig.talkState = 'rising';
   moveTarget = null; freeMove.f=freeMove.b=freeMove.l=freeMove.r=0;   // 진행 중이던 플레이어 이동 정지
-  walkLock(true);                                              // 접근 동안 클릭·이동·퀘스트 잠금
-  setHint('🚶 '+(rig.npcName||'동료')+'님이 다가오는 중…');
-  // sit2stand 클립은 루트를 끌어(step2sit 대칭) 일어나며 미끄러지는 착시 → 생략. 제자리에서 sit_idle→idle
-  // 크로스페이드로 일어선 뒤(_doneAt 경과) beginApproach 가 걷기 시작. 회전은 rising 상태에서 플레이어 쪽 정렬.
-  rigAnim(rig, 'idle', {fade:0.3});
-  rig._doneAt = performance.now() + 480;                       // 완전히 일어설 시간 확보 후 접근
+  openTalkUI(key);                                                    // 대화 UI(게임 시계 정지) — NPC 는 제자리 회전만
+  setHint('💬 '+(s.name||'동료')+'님과 대화 중 · Enter 전송 · [✕ 대화 끝내기]로 종료');
 }
 
 /* ============================================================
@@ -3020,9 +3013,54 @@ const DESK_SEATS = {
   manager:{ name:'김팀장', pos:{x:5.38,  z:4.30},  desk:{x:6.0,  z:4.3},  persona:'manager',  stand:'talk_open', yawFix:SIT_YAWFIX },
 };
 function seatFaceRotY(k){ const s=DESK_SEATS[k]; return Math.atan2(s.desk.x-s.pos.x, s.desk.z-s.pos.z) + (s.yawFix||0); }  // 의자→책상 정면(+착석 클립 힙 보정)
-/* 공용 애니메이션 클립 세트(앉기·서기·걷기·대화) — 4명 모두 동일 세트 등록 */
+/* 공용 애니메이션 클립 세트(앉기·서기·걷기·대화) — 방문객 등 애니 NPC 전용(좌석 NPC는 정적 모델) */
 const SEAT_CLIPS = ['anim_shared_idle.glb','anim_shared_chat.glb','anim_shared_talk.glb','anim_shared_talkopen.glb',
   'anim_shared_sitidle.glb','anim_shared_step2sit.glb','anim_shared_sit2stand.glb','anim_shared_walkinplace.glb'];
+
+/* ============================================================
+   좌석 NPC = 정적 앉은 모델(사람+의자 한 덩어리, 애니메이션 없음)
+   - seat_<key>.glb 를 좌석 좌표에 배치. 모델 정면(얼굴)은 로컬 +z.
+   - 대화는 '제자리 회전'만 — 걷기·기립·접근·walkLock 없음(ovTalk 오버레이가 이동을 정지).
+   - SEATED[key] = { obj, baseRotY, seat:{x,z}, name, persona }
+   ============================================================ */
+const SEATED = {};
+const SEAT_H = 1.30;                                  // 좌석모델 총 높이(m) — 머리·어깨가 책상 상판(~1.1) 위로. 튜닝 1.2~1.4
+const SEAT_TALK_RANGE = 2.8;                          // 이 반경 안에서만 대화 시작
+const SEAT_TURN_CLAMP = 0.7;                          // 대화 시 baseRotY 기준 ±rad 로만 살짝 회전
+const SEAT_YAWFIX = { male:0, female:0, mentor:0, manager:0 };   // 얼굴이 책상 반대면 해당 key 에 +Math.PI
+function registerSeated(key, obj, baseRotY, seatCenter){
+  const cfg = DESK_SEATS[key] || {};
+  const seat = { x: seatCenter.x, z: seatCenter.z };
+  if(DESK_SEATS[key]) DESK_SEATS[key].pos = seat;     // AI 라우팅·거리 계산용 좌표 갱신
+  SEATED[key] = { obj, baseRotY, seat, name: cfg.name, persona: cfg.persona };
+  obj.rotation.y = baseRotY;
+  const label = (cfg.name||'동료')+'에게 말 걸기';
+  // 착석 몸통을 감싸는 투명 히트박스(클릭 안정화) — 가시 모델에도 act 부여
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.9),
+    new THREE.MeshBasicMaterial({visible:false}));
+  hit.position.set(seat.x, 0.6, seat.z);
+  hit.castShadow = false; hit.frustumCulled = false;
+  hit.userData.act='talk'; hit.userData.talkKey=key; hit.userData.label=label;
+  scene.add(hit); hoverables.push(hit); SEATED[key].hit = hit;
+  obj.userData.act='talk'; obj.userData.talkKey=key; obj.userData.label=label;
+}
+/* 렌더 프레임마다: 대화 상대는 플레이어 쪽으로 살짝 회전(클램프), 그 외는 baseRotY 로 복귀. */
+function updateSeatedTalk(){
+  const active = G.talkActive;
+  for(const key in SEATED){
+    const s = SEATED[key]; if(!s.obj) continue;
+    let target = s.baseRotY;
+    if(active === key){
+      const face = Math.atan2(camPos.x - s.seat.x, camPos.z - s.seat.z);   // 얼굴(+z)이 플레이어를 향하는 각
+      let d = face - s.baseRotY;
+      while(d >  Math.PI) d -= 2*Math.PI;
+      while(d < -Math.PI) d += 2*Math.PI;
+      d = Math.max(-SEAT_TURN_CLAMP, Math.min(SEAT_TURN_CLAMP, d));
+      target = s.baseRotY + d;
+    }
+    s.obj.rotation.y = lerpAngle(s.obj.rotation.y, target, active===key ? 0.12 : 0.08);
+  }
+}
 
 /* 배치 테이블: 항목 1개 = 배치 1건. replaces = 성공 시 제거할 PROC 키(순수 추가는 null). 크기 단위는 실측 미터. */
 const MODELDEFS = [
@@ -3076,20 +3114,15 @@ function loadWorkstation(ws){
       comp.userData.wsKey = ws.key; comp.userData.wsPart = 'computer';
     }).catch(()=>{});
   }).catch(()=>{});
-  // 2) 의자 → 실측 좌면 중심에 NPC 착석(의자·사람 따로놀기 방지)
-  const placeNpc = (seatPos)=>{
-    DESK_SEATS[ws.key].pos = seatPos;                                        // 착석 좌표를 좌면 실측치로 갱신
-    loadAnimatedCharacter({file:ws.npcFile, pos:DESK_SEATS[ws.key].pos, rotY:seatFaceRotY(ws.key),
-      h:NPC_H, shadow:true, replaces:ws.npcReplaces, anim:true, animKey:ws.key, seat:ws.key, animClips:SEAT_CLIPS});
-  };
-  loadGLB('chair.glb').then(chair=>{
-    placeModel(chair, {file:'chair.glb', pos:ws.chair, rotY:ws.chairRot, h:0.95, shadow:true});
-    chair.userData.wsKey = ws.key; chair.userData.wsPart = 'chair';
-    const cb = new THREE.Box3().setFromObject(chair);                        // 좌면 중심(수평) 실측
-    const fwd = Math.atan2(ws.desk.x-ws.chair.x, ws.desk.z-ws.chair.z);      // 좌석→책상(전방)
-    placeNpc({ x:(cb.min.x+cb.max.x)/2 + Math.sin(fwd)*SIT_HIP_FWD,
-               z:(cb.min.z+cb.max.z)/2 + Math.cos(fwd)*SIT_HIP_FWD });
-  }).catch(()=>{ placeNpc(ws.chair); });                                     // 의자 실패 폴백: 의자 좌표로 착석
+  // 2) 좌석 NPC = 사람+의자 한 덩어리 정적 모델(seat_<key>.glb) → 착석 좌표에 배치.
+  //    모델 정면(+z)이 책상을 향하도록 회전. 별도 chair.glb 는 놓지 않음(모델에 의자 포함).
+  const seatRotY = Math.atan2(ws.desk.x-ws.chair.x, ws.desk.z-ws.chair.z) + (SEAT_YAWFIX[ws.key]||0);
+  loadGLB('seat_'+ws.key+'.glb').then(seat=>{
+    placeModel(seat, {file:'seat_'+ws.key+'.glb', pos:ws.chair, rotY:seatRotY, h:SEAT_H, shadow:true});
+    seat.userData.wsKey = ws.key; seat.userData.wsPart = 'seat';
+    if(ws.npcReplaces && PROC[ws.npcReplaces]){ removeObj(PROC[ws.npcReplaces]); PROC[ws.npcReplaces]=null; }
+    registerSeated(ws.key, seat, seatRotY, ws.chair);                        // 레지스트리·히트박스·클릭 act 등록
+  }).catch(()=>{ /* 로드 실패: 사람 없는 빈 자리(폴백) */ });
 }
 /* ── 플레이어(신입) 워크스테이션: 회색 절차 가구를 다른 직원과 동일한 파스텔 GLB 로 교체 ──
    상호작용(모니터 클릭=pc·인수인계서=doc·전화=phone)·라이브 WORKS 화면·책상 메모는 유지하고
@@ -3216,7 +3249,8 @@ function animate(){
 
   // 창밖 하늘 다시 그림
   if(Math.abs(p-lastSkyP) > 0.02){ lastSkyP = p; drawSky(p); }
-  updateAnimRigs();   // 스켈레탈 믹서 갱신 + 플레이어 인지 반응 (렌더가 실제 일어나는 이 경로에서만)
+  updateAnimRigs();   // 스켈레탈 믹서 갱신 + 플레이어 인지 반응(방문객 등) — 렌더가 실제 일어나는 이 경로에서만
+  updateSeatedTalk(); // 좌석 NPC 제자리 회전(대화 상대는 플레이어 쪽으로, 그 외 baseRotY 복귀)
   renderer.render(scene, camera);
 }
 /* 필름 그레인 텍스처 생성 */
@@ -4416,10 +4450,8 @@ async function sendTalk(){
 }
 function closeTalk(){
   $('ovTalk').classList.remove('open');
-  const key = G.talkKey; G.talkKey = null; G._talkBusy = false;
-  const rig = ANIMRIGS.find(r=>r.seatKey===key);
-  if(rig && rig.talkState==='talking') beginReturn(rig);       // 자리로 복귀 시퀀스
-  else { walkLock(false); G.talkActive = null; }               // 예외 방어
+  G.talkKey = null; G._talkBusy = false;
+  walkLock(false); G.talkActive = null;    // 대화 종료 → updateSeatedTalk 가 NPC 를 baseRotY(착석 방향)로 복귀
 }
 async function talkRespond(key, q, history){
   const cfg = DESK_SEATS[key];
