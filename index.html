@@ -2030,13 +2030,7 @@ function init3D(){
   monPole.position.set(0,1.13,-0.3); pdesk.add(monPole);
   const monBody = new THREE.Mesh(new THREE.BoxGeometry(0.97,0.57,0.035), std({color:0x14171c, roughness:0.3, metalness:0.4}));
   monBody.position.set(0,1.5,-0.3); monBody.castShadow = true; pdesk.add(monBody);
-  /* 키보드·마우스·마우스패드 (GLB 컴퓨터에 내장돼 있어 교체 시 함께 제거, 폴백용으로 pdesk 에 유지) */
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.72,0.004,0.3), std({color:0x23262b, roughness:0.95}));
-  pad.position.set(0.06,1.005,0.13); pdesk.add(pad);
-  const kb = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.022,0.17), std({map:kbTex(), roughness:0.55}));
-  kb.position.set(0,1.018,0.12); kb.rotation.y = 0.02; kb.castShadow=true; pdesk.add(kb);
-  const ms = new THREE.Mesh(new THREE.SphereGeometry(0.045,24,18), std({color:0x33383e, roughness:0.35, metalness:0.15}));
-  ms.scale.set(1,0.5,1.45); ms.position.set(0.42,1.015,0.14); ms.castShadow=true; pdesk.add(ms);
+  /* 회색 절차 키보드·마우스·패드 제거 — 파스텔 GLB 컴퓨터에 흰 키보드가 내장돼 있어 중복(키보드 2개)으로 보임 */
   scene.add(pdesk); PROC.playerDesk = pdesk;
   // WORKS 라이브 화면 평면 — 사용자 요청으로 '보이지 않게'(opacity 0) 하되 클릭 타깃은 유지(레이캐스트는 visible만 보고 opacity 무시).
   // 파스텔 GLB 모니터가 자체 화면을 가지므로 이 평면은 안 보여도 됨. 클릭 시 openPC 정상 동작.
