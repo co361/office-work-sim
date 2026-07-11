@@ -2136,18 +2136,7 @@ function init3D(){
   const lampGlow = new THREE.PointLight(0xffd9a0, 6, 2.2, 2);
   lampGlow.position.set(-1.05,1.34,-0.3); scene.add(lampGlow);
 
-  /* 파티션 (패브릭) */
-  const parti = new THREE.Mesh(new THREE.BoxGeometry(2.55,1.35,0.05), std({map:fabricTex(), roughness:0.95}));
-  parti.position.set(0,0.675,-1.12); parti.receiveShadow = true; parti.castShadow=true; scene.add(parti);
-  const partiTrim = new THREE.Mesh(new THREE.BoxGeometry(2.6,0.04,0.07), std({color:0x777d84, metalness:0.6, roughness:0.35}));
-  partiTrim.position.set(0,1.37,-1.12); scene.add(partiTrim);
-  // 파티션 메모들
-  for(let i=0;i<3;i++){
-    const note = new THREE.Mesh(new THREE.PlaneGeometry(0.12,0.12),
-      std({map:postitTex(), roughness:0.9}));
-    note.position.set(-0.55+i*0.4, 1.05+((i*37)%3)*0.06, -1.09);
-    note.rotation.z = (Math.random()-0.5)*0.25; scene.add(note);
-  }
+  /* 파티션 제거 — 팀 아일랜드 배치에서 중앙을 가로막고 마주보는 시야를 해쳐 삭제(메모 포함) */
 
   /* ---- 사무실 환경: 왼쪽 동료 아일랜드(측면 배치) ---- */
   {
@@ -2337,24 +2326,7 @@ function init3D(){
   gCeil2 = new THREE.PointLight(0xfdf4e3, 9, 9, 2); gCeil2.position.set(2.5,2.95,-1); scene.add(gCeil2);
   gFill = new THREE.DirectionalLight(0xd9d8d0, 0.38); gFill.position.set(-4,3,3); scene.add(gFill);
 
-  /* 블라인드 햇살 자국 (책상·바닥) */
-  {
-    const pc = document.createElement('canvas'); pc.width=256; pc.height=256;
-    const px = pc.getContext('2d');
-    for(let i=0;i<7;i++){
-      const y = 14+i*36;
-      const pg = px.createLinearGradient(0,y,0,y+22);
-      pg.addColorStop(0,'rgba(255,240,214,0)'); pg.addColorStop(0.5,'rgba(255,240,214,0.9)'); pg.addColorStop(1,'rgba(255,240,214,0)');
-      px.fillStyle=pg; px.fillRect(0,y,256,22);
-    }
-    const poolTex = new THREE.CanvasTexture(pc);
-    const poolMat = ()=> new THREE.MeshBasicMaterial({map:poolTex, transparent:true, opacity:0,
-      blending:THREE.AdditiveBlending, depthWrite:false});
-    gPoolFloor = new THREE.Mesh(new THREE.PlaneGeometry(3.4,2.4), poolMat());
-    gPoolFloor.rotation.set(-Math.PI/2,0,0.5); gPoolFloor.position.set(2.4,0.012,-2.2); scene.add(gPoolFloor);
-    gPoolDesk = new THREE.Mesh(new THREE.PlaneGeometry(1.7,0.95), poolMat());
-    gPoolDesk.rotation.set(-Math.PI/2,0,0.35); gPoolDesk.position.set(0.55,1.006,-0.05); scene.add(gPoolDesk);
-  }
+  /* 블라인드 햇살 자국 제거 — 아일랜드 배치와 위치가 안 맞아 부자연스러워 삭제(gPoolFloor/Desk null 유지, tick 가드 있음) */
 
   /* 창가 빛줄기 먼지 입자 (시네마틱) */
   {
