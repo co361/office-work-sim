@@ -1889,7 +1889,7 @@ let PROC = {};
 function init3D(){
   const canvas = document.getElementById('c3d');
   renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 레티나(dpr2)에서 렌더 픽셀 4배 → 2.25배로 캡(성능)
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -2149,8 +2149,8 @@ function init3D(){
   lampArm.position.set(-1.02,1.2,-0.32); lampArm.rotation.z = 0.32; pdesk.add(lampArm);
   const lampHead = new THREE.Mesh(new THREE.ConeGeometry(0.06,0.1,20,1,true), std({color:0x2f343a, metalness:0.7, roughness:0.35, side:THREE.DoubleSide}));
   lampHead.position.set(-1.1,1.4,-0.32); lampHead.rotation.z = 2.4; pdesk.add(lampHead);
-  const lampGlow = new THREE.PointLight(0xffd9a0, 6, 2.2, 2);
-  lampGlow.position.set(-1.05,1.34,-0.3); scene.add(lampGlow);
+  // 데스크 스탠드 글로우 라이트 제거: GLB 교체 시 램프 갓 지오메트리가 사라져 광원만 남는 고아 조명 —
+  // monLight(모니터)·천장광과 겹쳐 시각 기여가 미미하므로 조명 수 절감(포인트라이트 프래그먼트 비용↓)
 
   /* 파티션 제거 — 팀 아일랜드 배치에서 중앙을 가로막고 마주보는 시야를 해쳐 삭제(메모 포함) */
 
@@ -2341,7 +2341,7 @@ function init3D(){
   gSun.position.set(3.4, 3.2, -2.4); gSun.target.position.set(-0.4,1,0.6);
   scene.add(gSun.target);
   gSun.castShadow = true;
-  gSun.shadow.mapSize.set(2048,2048);
+  gSun.shadow.mapSize.set(1024,1024);   // 2048→1024: 그림자맵 렌더/샘플 비용 4배↓(radius 4 소프트로 품질 유지)
   gSun.shadow.camera.left=-4; gSun.shadow.camera.right=4;
   gSun.shadow.camera.top=4; gSun.shadow.camera.bottom=-2;
   gSun.shadow.bias = -0.0004; gSun.shadow.radius = 4;
@@ -2421,6 +2421,7 @@ function init3D(){
   addEventListener('blur', ()=>{ freeMove.f=freeMove.b=freeMove.l=freeMove.r=0; freeMove.run=false; });
   addEventListener('resize', ()=>{
     camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 모니터 이동 시 dpr 변화 반영 + 캡 유지
     renderer.setSize(innerWidth, innerHeight);
   });
   loadOfficeModels();   // GLB 배경 모델 비동기 로드(실패 시 절차 그래픽 유지)
@@ -3333,6 +3334,8 @@ function loadOfficeModels(){
 }
 let _grainTick = 0;
 let pcSkip = 0;
+/* 배경/안개 색 보간용 재사용 Color(매 프레임 new THREE.Color 2개 할당 방지) */
+let _bgDay = new THREE.Color(0xc5ccd0), _bgNight = new THREE.Color(0x1d2532), _bgLerp = new THREE.Color();
 function animate(){
   requestAnimationFrame(animate);
   /* PC 화면 사용 중엔 3D를 저주기(≈2fps)로만 렌더 — 시트·메일 UI 반응성 확보 */
@@ -3398,18 +3401,20 @@ function animate(){
   if(gPoolFloor){ const s = Math.max(0, 0.34*(1 - p*1.15)); gPoolFloor.material.opacity = s; gPoolDesk.material.opacity = s*0.8; }
   gPanels.forEach(pn=>pn.material.color.setHSL(0.10, 0.25+dusk*0.3, 0.86+dusk*0.12));
   // 배경·안개도 함께 어두워짐
-  const bg = new THREE.Color(0xc5ccd0).lerp(new THREE.Color(0x1d2532), p*0.92);
-  scene.background = bg; if(scene.fog) scene.fog.color = bg;
+  _bgLerp.copy(_bgDay).lerp(_bgNight, p*0.92);
+  scene.background = _bgLerp; if(scene.fog) scene.fog.color = _bgLerp;
 
-  // ---- 먼지 입자 부유 ----
+  // ---- 먼지 입자 부유 (위치 갱신·버퍼 업로드는 격프레임으로 — 시각 차이 없음, GPU 업로드 절반) ----
   if(gDust){
-    const arr = gDust.geometry.attributes.position.array;
-    for(let i=0;i<arr.length;i+=3){
-      arr[i+1] -= 0.00055 + Math.sin(t*0.7 + i)*0.0002;
-      arr[i]   += Math.sin(t*0.35 + i*1.7)*0.00035;
-      if(arr[i+1] < 0.5){ arr[i+1] = 2.3; }
+    if((_grainTick & 1) === 0){
+      const arr = gDust.geometry.attributes.position.array;
+      for(let i=0;i<arr.length;i+=3){
+        arr[i+1] -= 0.0011 + Math.sin(t*0.7 + i)*0.0004;
+        arr[i]   += Math.sin(t*0.35 + i*1.7)*0.0007;
+        if(arr[i+1] < 0.5){ arr[i+1] = 2.3; }
+      }
+      gDust.geometry.attributes.position.needsUpdate = true;
     }
-    gDust.geometry.attributes.position.needsUpdate = true;
     gDustMat.opacity = Math.max(0.02, 0.15*(1 - p*0.95)); // 해질수록 빛줄기 먼지 소멸
   }
 
