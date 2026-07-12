@@ -4578,8 +4578,10 @@ function openSeniorChat(){
 function talkGreeting(key){
   const cfg = DESK_SEATS[key], short = (RANKS[G.rank]&&RANKS[G.rank].short) || '신입';
   if(cfg.persona==='senior')  return '네, '+short+'님! 무슨 일이에요? 규정이든 뭐든 편하게 물어봐요 🙂';
-  if(cfg.persona==='manager') return short+'님, 오셨군요. 무슨 일이시죠?';
-  return '오, 안녕하세요! 무슨 일 있어요? 😊';
+  if(cfg.persona==='manager') return short+'님, 무슨 일이십니까. 용건만 간단히 말씀하세요.';
+  if(key==='male')   return '오, '+short+'님 왔어요? ㅎㅎ 뭐 궁금한 거 있어요? 편하게 물어봐요~';
+  if(key==='female') return '아, 안녕하세요 '+short+'님. 혹시 뭐 도와드릴 거 있으세요?';
+  return '안녕하세요! 무슨 일 있어요? 😊';
 }
 function openTalkUI(key){
   const cfg = DESK_SEATS[key]; if(!cfg) return;
@@ -4612,8 +4614,8 @@ async function sendTalk(){
   G._talkBusy = true;
   let ans;
   try{ ans = await talkRespond(key, q, arr.filter(m=>!m.typing)); }
-  catch(e){ ans = talkFallback(key); }
-  if(!ans) ans = talkFallback(key);
+  catch(e){ ans = talkFallback(key, q); }
+  if(!ans) ans = talkFallback(key, q);
   ph.text = ans; delete ph.typing;
   G._talkBusy = false;
   renderTalk();
@@ -4643,42 +4645,87 @@ async function talkRespond(key, q, history){
   return await withTimeout(callAI('chat', prompt), 12000);     // 실패/타임아웃 → 호출부에서 talkFallback
 }
 function managerPrompt(q, history){
-  const D = DEPTS[G.dept];
-  const hist = history.slice(-4).map(m=>(m.who==='me'?'플레이어':'김팀장')+': '+m.text).join(' / ');
-  return `당신은 기업 실무 시뮬레이션 게임 속 NPC '김팀장'이다. edmakers ${D.name}의 팀장(결재권자)이며, 오늘 입사 첫날인 ${RANKS[G.rank].name} 신입을 대한다.
-말투: 정중하지만 간결한 지시형 존댓말, 2문장 이내, 이모지 없음, 호칭은 "${RANKS[G.rank].short}님".
-규칙: ①세계관 유지(오늘 입사 첫날·edmakers·${D.name}) ②특정 업무를 어떤 버튼(회신/보류/위임 등)으로 처리할지 정답은 지정하지 않는다 — 방향·기대치·원칙만 전한다 ③모르는 사실·숫자는 지어내지 않는다 ④잡담이면 짧게 응한 뒤 업무로 화제를 돌린다.
+  const D = DEPTS[G.dept], nm = bossName();
+  const hist = history.slice(-4).map(m=>(m.who==='me'?'플레이어':nm)+': '+m.text).join(' / ');
+  return `당신은 기업 실무 시뮬레이션 속 NPC '${nm}'이다. edmakers ${D.name}의 ${G.rank==='mgr'?'상급 결재자(부장)':'팀장(결재권자)'}이며, 오늘 입사한 ${RANKS[G.rank].name}를 대한다.
+[성격] 과묵하고 엄격하지만 공정하다. 근거와 결과를 중시하고 늘 바쁘다. 신입에게 거리감은 있으나 방향은 분명히 준다.
+[말투] 간결한 지시형 존댓말(하십시오체), 이모지 없음, 2문장 이내, 호칭 "${RANKS[G.rank].short}님". "결론부터.", "근거는?" 같은 요점 강조.
+규칙: ①세계관 유지(오늘 입사 첫날·edmakers·${D.name}) ②특정 업무의 처리 버튼(회신/보류/위임 등) 정답은 지정하지 않고 방향·기대치·원칙만 ③없는 사실·숫자 날조 금지 ④잡담이면 한마디로 짧게 응한 뒤 업무로 화제를 돌린다 ⑤판단이 어려운 사안은 "박선임과 먼저 상의하라"고 안내할 수 있다.
 [대화 기록] ${hist||'(첫 대화)'}
 [플레이어 발화] ${q}
-김팀장의 답변만 출력하라.`;
+${nm}의 답변만 출력하라.`;
 }
+const PERSONA = {
+  male:{ name:'김대리', age:30, title:'대리 3년차',
+    voice:'능글맞고 유머러스한 옆자리 선배. 반존대 섞인 해요체, 가벼운 농담과 과장, "원래 그래요~" 같은 말버릇. 이모지 가끔.',
+    trait:'사내 눈치·관계·타이밍에 밝은 정보통. 팀장 기분이나 사내 분위기를 슬쩍 귀띔한다. 속으론 신입을 챙기는 츤데레.',
+    rel:'신입의 옆자리 선배이자 비공식 멘토 보조.' },
+  female:{ name:'이주임', age:27, title:'주임 2년차',
+    voice:'차분하고 정중한 해요체, 담백하고 조심스러움. 이모지 최소. "혹시…", "확인하셨어요?" 같은 재확인 말버릇.',
+    trait:'꼼꼼하고 규정·문서·검산에 강한 모범생. 마감과 디테일을 잘 챙기고 걱정이 조금 많다.',
+    rel:'바로 옆자리 실무 동료. 디테일·마감 리마인드를 자주 해준다.' },
+};
 function coworkerPrompt(key, q, history){
-  const D = DEPTS[G.dept], cfg = DESK_SEATS[key];
+  const D = DEPTS[G.dept], cfg = DESK_SEATS[key], p = PERSONA[key] || {};
   const hist = history.slice(-4).map(m=>(m.who==='me'?'플레이어':cfg.name)+': '+m.text).join(' / ');
-  return `당신은 기업 실무 시뮬레이션 게임 속 NPC '${cfg.name}'이다. edmakers ${D.name}의 동료 사원으로, 오늘 입사한 신입과 편하게 대화한다.
-말투: 친근한 존댓말(해요체), 캐주얼한 스몰톡, 1~2문장, 이모지 최대 1개.
-규칙: ①업무 정답·규정은 단정하지 않고 가볍게 맞장구·잡담 위주 ②세계관 유지(오늘 입사 첫날·edmakers) ③모르는 건 아는 척하지 않는다.
+  return `당신은 기업 실무 시뮬레이션 게임 속 NPC '${cfg.name}'(${p.age}세·${p.title})이다. edmakers ${D.name}의 동료로, 오늘 입사한 ${RANKS[G.rank].short} 신입과 대화한다.
+[성격] ${p.trait}
+[말투] ${p.voice}
+[관계] ${p.rel}
+규칙: ①위 성격·말투를 살려 캐릭터답게, 1~2문장 ②업무 정답·규정은 단정하지 않고 방향·경험담·맞장구 위주 ③세계관 유지(오늘 입사 첫날·edmakers·${D.name}) ④모르는 건 아는 척 않고 "박선임에게 물어봐요" 식으로 넘긴다 ⑤숫자·규정은 지어내지 않는다.
 [대화 기록] ${hist||'(첫 대화)'}
 [플레이어 발화] ${q}
 ${cfg.name}의 답변만 출력하라.`;
 }
-const TALK_FALLBACK = {
-  manager:['네, 확인했습니다. 오늘 들어온 건들은 마감 순서대로 챙겨 주세요.',
-           '지금은 회의 준비 중이라 길게는 어렵네요. 급한 사안은 메일로 정리해 두세요.',
-           '첫날이라 정신없죠? 모르는 건 박선임에게 먼저 물어보고 진행하세요.',
-           '기안이나 결재 건은 근거부터 확인하고 올려 주세요.'],
-  coworker:['ㅎㅎ 첫날인데 할 만해요? 모르는 거 있으면 편하게 물어봐요!',
-            '저도 처음엔 정신없었어요. 금방 익숙해질 거예요 🙂',
-            '필요한 거 있으면 말해요~ 자리 바로 옆이니까요.',
-            '오늘 메일 좀 많이 왔죠? 급한 것부터 하나씩 하면 돼요!',
-            '점심 같이 갈래요? 구내식당 12시부터예요 😄']
+function classifyTalk(t){
+  const s=(t||'').toLowerCase();
+  if(/고마|감사|덕분|최고|대단|잘한|칭찬|멋지|짱/.test(s)) return 'praise';
+  if(/힘들|짜증|어렵|모르겠|못하|망했|스트레스|바빠 죽|현타|하기 싫|지친/.test(s)) return 'complaint';
+  if(/\?|？|뭐|무엇|어떻|어디|얼마|왜|언제|누구|알려|방법|규정|기준|절차|어느|되나|될까|하나요|나요$|까요$/.test(s)) return 'work';
+  if(/안녕|반가|처음|잘 부탁|하이|헬로|저기요|계세요/.test(s)) return 'greeting';
+  if(/점심|커피|밥|주말|날씨|피곤|야구|축구|드라마|취미|어제|주식|여행|맛집/.test(s)) return 'smalltalk';
+  return 'smalltalk';
+}
+const TALK_LINES = {
+  male:{
+    greeting:['오 왔어요? ㅎㅎ 오늘 첫날인데 할 만해요?','어이 신입님~ 자리 적응은 좀 됐어요?','왔어요? 필요한 거 있으면 나한테 말해요, 옆자리잖아요 ㅋㅋ'],
+    smalltalk:['ㅋㅋ 저는 이따 점심에 뭐 먹을지가 제일 큰 고민이에요.','오늘 야구 있는 날인데… 아 이건 비밀이에요 ㅎㅎ','커피 땡기지 않아요? 이따 한 잔 콜?','원래 첫날은 이것저것 구경하는 맛이죠~'],
+    work:['음~ 그건 박선임님이 정확해요. 나는 대충 아는 척만 하는 거라 ㅋㅋ','그거 원래 그렇게 하는 거예요~ 근데 확실한 건 인수인계서 한 번 봐요.','제가 3년 해봐서 아는데, 급한 것부터 하나씩 쳐내면 돼요.','팀장님한테 물어볼 거면 지금 말고 좀 이따 가요, 지금 바쁘시더라고요.'],
+    praise:['에이 뭘 이런 걸로~ ㅎㅎ 근데 기분은 좋네요.','거봐요, 신입님 될 놈이라니까 ㅋㅋ','칭찬은 고래도 춤추게 한다는데 커피로 받을게요 ㅎㅎ'],
+    complaint:['에이 첫날부터 그러면 안 돼요~ 나도 처음엔 멘붕이었어요 ㅋㅋ','힘 빼지 말고 하나씩 해요. 안 되면 나 불러요, 옆자리잖아요.','그럴 땐 잠깐 커피 한 잔 하고 오는 게 약이에요, 진짜로.'],
+  },
+  female:{
+    greeting:['안녕하세요, 자리 불편한 건 없으세요?','아 오셨어요? 필요한 서식 있으면 말씀하세요.','안녕하세요 🙂 오늘 정신없으시죠, 천천히 하셔도 돼요.'],
+    smalltalk:['저는 오전에 커피 안 마시면 일이 안 돼요 ㅎㅎ','점심은 구내식당 12시부터예요. 같이 가실래요?','오늘 처리할 게 좀 많더라고요… 우리 둘 다 화이팅이에요.'],
+    work:['혹시 그거 인수인계서에서 찾아보셨어요? 거기 있을 거예요.','저도 처음엔 그거 헷갈렸는데, 규정부터 확인하면 돼요.','정확한 건 박선임님이 잘 아세요. 저는 양식 정도만 도와드릴 수 있어요.','마감 있는 거면 그것부터 하는 게 안전해요, 혹시 확인하셨어요?'],
+    praise:['어머, 감사해요. 그렇게 말해주시니 힘나네요.','제가 한 건 별거 아닌데… 고맙습니다 🙂','도움이 됐다니 다행이에요, 언제든 물어보세요.'],
+    complaint:['너무 무리하지 마세요, 첫날이잖아요.','저도 그럴 때 있어요… 한 번에 다 하려고 안 해도 괜찮아요.','힘드시면 잠깐 쉬었다 하세요. 급한 건 제가 같이 봐드릴게요.'],
+  },
+  manager:{
+    greeting:['오셨습니까. 용건 있으면 간단히 말씀하세요.','예. 무슨 일이십니까.','자리에 적응은 됐습니까. 급한 것부터 챙기세요.'],
+    smalltalk:['잡담은 이따 하고, 지금은 오늘 들어온 건부터 봅시다.','점심은 알아서 챙기세요. 오후에 처리할 게 많습니다.','여유는 마감 지키고 나서 찾는 겁니다.'],
+    work:['처리 방법은 스스로 판단하세요. 근거만 분명하면 됩니다.','그건 박선임과 먼저 상의하고, 방향이 서면 진행하세요.','결론부터 정리해서 가져오세요. 근거가 핵심입니다.','마감 순서대로 처리하면 됩니다. 급한 건 먼저.'],
+    praise:['됐습니다. 결과로 보여주면 됩니다.','칭찬은 마감 지키고 들으세요.','알겠습니다. 계속 그렇게 하세요.'],
+    complaint:['힘든 건 압니다. 그래도 오늘 건은 오늘 끝내야 합니다.','막히면 박선임에게 물어보세요. 혼자 끌지 말고.','감정은 잠깐 접어두고, 우선순위부터 잡으세요.'],
+  },
+  mentor:{
+    greeting:['네, 왔어요? 뭐든 편하게 물어봐요 🙂','오셨어요? 오늘 하루 제가 옆에서 도와줄게요.','반가워요! 모르는 건 쌓아두지 말고 바로바로 물어봐요.'],
+    smalltalk:['ㅎㅎ 점심은 12시부터예요. 급한 것부터 정리하고 여유 있게 다녀와요.','첫날은 원래 정신없어요. 저도 그랬는걸요 🙂','커피 한 잔 하면서 천천히 해요. 오늘 다 잘 될 거예요.'],
+    praise:['에구 뭘요, 저야 당연히 도와야죠 🙂 잘하고 있어요!','그렇게 말해주니 제가 더 고맙네요. 계속 이렇게만 해요!','신입님이 잘 따라와 주니까 그렇죠. 화이팅이에요!'],
+    complaint:['힘들죠? 하나씩만 해요. 다 못 해도 괜찮아요 🙂','너무 자책하지 말아요. 첫날에 이 정도면 잘하는 거예요.','막히면 저 불러요. 같이 보면 금방 풀려요.'],
+  },
 };
-function talkFallback(key){
+function talkFallback(key, lastUserText){
   const cfg = DESK_SEATS[key];
-  if(cfg.persona==='senior') return SENIOR_DEFAULT;
-  const pool = TALK_FALLBACK[cfg.persona] || TALK_FALLBACK.coworker;
+  const cat = classifyTalk(lastUserText||'');
+  const table = TALK_LINES[key] || TALK_LINES[cfg.persona] || TALK_LINES.male;
+  let pool = table[cat] || table.smalltalk || table.greeting;
+  if(cfg.persona==='senior' && cat==='work'){
+    const faq = seniorAnswerFallback(lastUserText||''); if(faq) return faq;
+    return SENIOR_DEFAULT;
+  }
   G._talkFbI = G._talkFbI || {};
-  const i = (G._talkFbI[key]||0) % pool.length; G._talkFbI[key] = i+1;
+  const rk = key+':'+cat; const i=(G._talkFbI[rk]||0)%pool.length; G._talkFbI[rk]=i+1;
   return pool[i];
 }
 
