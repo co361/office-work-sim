@@ -1511,6 +1511,11 @@ let gSun, gHemi, gCeil1, gCeil2, gFill, gDust, gDustMat, gPanels = [], gPoolFloo
 let gFloorExtra = [];           // 복도·팀장실 바닥 plane (바닥 클릭 레이캐스트 확장 대상)
 let gCorr, gBoss, gBossL;       // 복도·팀장실 조명(저녁 점등 연동)
 let hoverables = [], yaw = 0, pitch = -0.26, dragging = false, lastX = 0, lastY = 0;
+/* ===== 3인칭 하이브리드 아바타 전역 ===== */
+let playerRig = null;                 // player.glb rig (mixer/clips) — 자유이동 중 뒤에서 보이는 내 캐릭터
+let _tpCam = null;                    // 3인칭 카메라 트레일링 현위치(THREE.Vector3, 지연 초기화)
+let _tpLast = performance.now();      // 아바타 믹서 dt
+let TP_BACK = 3.2, TP_UP = 2.6, TP_LOOK_Y = 1.25;  // 카메라: 아바타 뒤 거리 / 카메라 높이 / 주시점 높이 (스샷 튜닝 대상)
 /* ===== 사내 이동 엔진 전역 (click-to-move + 스테이션 스냅) ===== */
 let camPos = {x:0.0, z:1.0};   // 현재 발 위치(수평) — animate가 매 프레임 camera.position에 반영
 let camEyeY = 1.44;             // 현재 눈높이 (착석 EYE_SIT 과 일치)
@@ -2242,13 +2247,18 @@ function init3D(){
 
   /* ---- 오른쪽 벽: 출입문 ---- */
   {
-    const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.1,2.15,1.05), std({color:0x8b8f94, roughness:0.5}));
-    doorFrame.position.set(6.97,1.075,1.8); scene.add(doorFrame);
+    // 문틀: 속이 빈 액자형(좌우 문설주 + 상단 인방). 예전엔 개구부를 통째로 막는 솔리드 박스라
+    // 문짝이 열려도 뒤에 가려 항상 닫힌 것처럼 보였다 → 3인칭에서 개폐가 안 보이던 원인. 개구부 z[1.3,2.25]는 비운다.
+    const fmat = std({color:0x8b8f94, roughness:0.5});
+    const jambL = new THREE.Mesh(new THREE.BoxGeometry(0.1,2.15,0.12), fmat); jambL.position.set(6.97,1.075,1.24); scene.add(jambL);
+    const jambR = new THREE.Mesh(new THREE.BoxGeometry(0.1,2.15,0.12), fmat); jambR.position.set(6.97,1.075,2.31); scene.add(jambR);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.2,1.15), fmat); lintel.position.set(6.97,2.05,1.8); scene.add(lintel);
     const door = new THREE.Mesh(new THREE.BoxGeometry(0.05,2.05,0.95), std({color:0xcfc9bd, roughness:0.55}));
     door.position.set(6.95,1.025,1.3); door.geometry.translate(0,0,0.475);  // 경첩을 문 뒤쪽(z=1.3)으로 이동 → 스윙 개폐
     scene.add(door); PROC.door = door;
+    // 손잡이는 문짝의 자식으로 붙여 함께 스윙(예전엔 씬에 고정돼 문만 열리고 손잡이는 허공에 남았다)
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.035,14,10), std({color:0xb9b06e, metalness:0.85, roughness:0.25}));
-    knob.position.set(6.9,1.02,1.42); scene.add(knob);
+    knob.position.set(-0.045,-0.005,0.86); door.add(knob);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.34,0.12), new THREE.MeshBasicMaterial({color:0x39424d}));
     sign.rotation.y = -Math.PI/2; sign.position.set(6.9,2.28,1.8); scene.add(sign);
   }
@@ -2416,6 +2426,7 @@ function init3D(){
     renderer.setSize(innerWidth, innerHeight);
   });
   loadOfficeModels();   // GLB 배경 모델 비동기 로드(실패 시 절차 그래픽 유지)
+  loadPlayerAvatar();   // 3인칭 아바타(자유이동 시 표시)
   animate();
 }
 
@@ -2850,6 +2861,39 @@ function loadAnimatedCharacter(def){
     // 폴백: 정적 메시(바인드 포즈)라도 배치
     loadGLB(def.file).then(root=>placeModel(root, def)).catch(()=>{ /* 완전 폴백: 절차 그래픽 유지 */ });
   });
+}
+/* 3인칭 플레이어 아바타 로드: player.glb + 추가 클립(idle/run/talk). ANIMRIGS에 넣지 않는다
+   (자기 자신을 바라보게 회전시키면 불안정 + raycast 대상 제외). 매 프레임 수동 갱신. */
+function loadPlayerAvatar(){
+  loadGLBRaw('player.glb').then(g=>{
+    const root=g.scene;
+    placeModel(root,{file:'player.glb',pos:{x:camPos.x,z:camPos.z},rotY:0,h:NPC_H,shadow:true});
+    root.traverse(o=>{ if(o.isMesh||o.isSkinnedMesh){ o.castShadow=true; o.frustumCulled=false; } });
+    root.visible=false;   // 착석 시작 상태에선 숨김
+    const rig={ root, mixer:new THREE.AnimationMixer(root), clips:{}, actions:{}, _curAction:null, _curName:null, pending:null, _pendingOpts:null };
+    rigAddClips(rig, g.animations);        // 내장 walk
+    playerRig=rig;
+    rigAnim(rig,'idle');                    // idle 클립 도착 시 재생(pending)
+    ['anim_player_idle.glb','anim_player_run.glb','anim_player_talk.glb'].forEach(cf=>
+      loadGLBRaw(cf).then(gc=>rigAddClips(rig,gc.animations)).catch(()=>{}));
+  }).catch(()=>{ /* 실패 시 3인칭 없이 기존 1인칭 유지 */ });
+}
+function tpActive(){ return !!playerRig && standing && !walk_locked && !seatReturn && !G.talkActive; }
+/* 매 프레임: 아바타를 발위치(camPos)에 놓고, 이동방향(정지 시 카메라 반대=화면 안쪽)으로 회전, 클립 선택. */
+function updatePlayerAvatar(){
+  const rig=playerRig; if(!rig) return;
+  const now=performance.now(); let dt=(now-_tpLast)/1000; _tpLast=now; if(dt>0.1) dt=0.1;
+  rig.root.position.x=camPos.x; rig.root.position.z=camPos.z;
+  const mv=freeMove, moving=!!(mv.f||mv.b||mv.l||mv.r);
+  let faceYaw;
+  if(moving){ const ix=mv.r-mv.l, iz=mv.f-mv.b, sy=Math.sin(yaw), cy=Math.cos(yaw);
+    let dx=(-sy)*iz+cy*ix, dz=(-cy)*iz+(-sy)*ix; faceYaw=Math.atan2(dx,dz); }
+  else if(moveTarget){ faceYaw=Math.atan2(moveTarget.x-camPos.x, moveTarget.z-camPos.z); }
+  else { faceYaw=Math.atan2(-Math.sin(yaw), -Math.cos(yaw)); }  // 카메라 반대 = 화면 안쪽(등이 카메라로)
+  rig.root.rotation.y=lerpAngle(rig.root.rotation.y, faceYaw, 0.2);
+  const want = moving ? (mv.run?'run':'walk') : (moveTarget?'walk':'idle');
+  if(rig._curName!==want) rigAnim(rig, want, {fade:0.2});
+  rig.mixer.update(dt);
 }
 /* 렌더 프레임마다 호출: 믹서 갱신 + (착석 NPC는 대화 상태머신 / 그 외는 플레이어 인지 반응). */
 function updateAnimRigs(){
@@ -3298,28 +3342,40 @@ function animate(){
     return;
   }
   const t = performance.now()*0.001;
-  // 카메라: 시선 + 미세한 호흡 흔들림(핸드헬드 느낌)
-  camera.rotation.set(
-    pitch + Math.sin(t*0.9)*0.0013 + Math.sin(t*2.3)*0.0004,
-    yaw   + Math.sin(t*0.6)*0.0010 + Math.cos(t*1.7)*0.0004,
-    Math.sin(t*0.4)*0.0006, 'YXZ');
   if(walk){ updateWalk(); }                        // 스테이션 도킹 이동 중이면 카메라 위치 보간
   else {
     camEyeY += (targetEyeY - camEyeY)*0.12;         // 착석↔기립 눈높이 부드러운 전환
     if(seatReturn) updateSeatReturn();              // 자리 복귀 보간
     else if(standing) updateFreeMove();             // WASD·바닥 클릭 자유 이동
   }
-  camera.position.x = camPos.x;
-  camera.position.z = camPos.z;
-  camera.position.y = camEyeY + Math.sin(t*1.1)*0.004;
+  const _tp = tpActive();
+  if(playerRig) playerRig.root.visible = _tp;       // 아바타는 3인칭일 때만 표시
+  if(_tp){
+    updatePlayerAvatar();
+    // 아바타 뒤+위 궤도 카메라(yaw로 회전, 항상 등 뒤). 지연 트레일링으로 부드럽게.
+    const tx = camPos.x + Math.sin(yaw)*TP_BACK, tz = camPos.z + Math.cos(yaw)*TP_BACK;
+    if(!_tpCam) _tpCam = new THREE.Vector3(tx, TP_UP, tz);   // 재진입 시 등 뒤로 스냅(방 가로지르는 스woop 방지)
+    _tpCam.x += (tx-_tpCam.x)*0.18; _tpCam.y += (TP_UP-_tpCam.y)*0.18; _tpCam.z += (tz-_tpCam.z)*0.18;
+    camera.position.set(_tpCam.x, _tpCam.y, _tpCam.z);
+    camera.lookAt(camPos.x, TP_LOOK_Y, camPos.z);
+  } else {
+    _tpCam = null;                                  // 1인칭 복귀 시 트레일링 리셋
+    camera.rotation.set(
+      pitch + Math.sin(t*0.9)*0.0013 + Math.sin(t*2.3)*0.0004,
+      yaw   + Math.sin(t*0.6)*0.0010 + Math.cos(t*1.7)*0.0004,
+      Math.sin(t*0.4)*0.0006, 'YXZ');
+    camera.position.x = camPos.x;
+    camera.position.z = camPos.z;
+    camera.position.y = camEyeY + Math.sin(t*1.1)*0.004;
+  }
   /* 목적지 마커 펄스 (opacity만 — 드로우콜 추가 없음) */
   if(G.markers){ for(const k in G.markers){ const mk=G.markers[k]; if(mk&&mk.material) mk.material.opacity = 0.35 + 0.22*Math.sin(t*3); } }
   /* NPC 아이들 애니메이션 (미세한 호흡/흔들림) */
   if(G.npcs){ G.npcs.forEach(n=>{ if(n.children[0]) n.children[0].rotation.z = Math.sin(t*0.8+n.userData.bob)*0.02; n.position.y = Math.sin(t*0.9+n.userData.bob)*0.006; }); }
   if(G.started && !anyOverlayOpen()) tick();
   if(wallClockHand){ wallClockHand.rotation.z = -((G.time%12)/12)*Math.PI*2; }
-  if(PROC.door){ const near = Math.hypot(camPos.x-6.95, camPos.z-1.8)<1.8;   // 문 근접 자동 개폐
-    PROC.door.rotation.y = lerpAngle(PROC.door.rotation.y, near?1.15:0, 0.12); }
+  if(PROC.door){ const near = Math.hypot(camPos.x-6.95, camPos.z-1.8)<2.1;   // 문 근접 자동 개폐(반경~2m)
+    PROC.door.rotation.y = lerpAngle(PROC.door.rotation.y, near?1.3:0, 0.14); }
 
   const p = Math.min(1, Math.max(0,(G.time-9)/9));      // 0=아침, 1=저녁
   const dusk = Math.max(0,(p-0.55)/0.45);               // 늦은 오후~저녁 비율
