@@ -2987,6 +2987,7 @@ function startTalk(key){
   G.talkActive = key;
   moveTarget = null; freeMove.f=freeMove.b=freeMove.l=freeMove.r=0;   // 진행 중이던 플레이어 이동 정지
   openTalkUI(key);                                                    // 대화 UI(게임 시계 정지) — NPC 는 제자리 회전만
+  if(key==='manager') applyBossTalkCam();                             // 김팀장: 모니터에 얼굴 가림 → 전용 카메라
   setHint('💬 '+(s.name||'동료')+'님과 대화 중 · Enter 전송 · [✕ 대화 끝내기]로 종료');
 }
 
@@ -3025,6 +3026,30 @@ const SEAT_H = 1.30;                                  // 좌석모델 총 높이
 const SEAT_TALK_RANGE = 2.8;                          // 이 반경 안에서만 대화 시작
 const SEAT_TURN_CLAMP = 0.7;                          // 대화 시 baseRotY 기준 ±rad 로만 살짝 회전
 const SEAT_YAWFIX = { male:0, female:0, mentor:0, manager:0 };   // 얼굴이 책상 반대면 해당 key 에 +Math.PI
+/* ── 김팀장(manager) 대화 전용 카메라 ──
+   김팀장은 정적 착석 모델이라 대화 시 카메라가 이동하지 않는데, 책상 정면(입구쪽)에는
+   desk.glb 에 baked-in 된 모니터·스탠드가 얼굴을 가린다. → 대화 진입 시 책상 남서쪽으로
+   카메라를 옮겨 모니터·램프를 비껴 3/4 정면으로 얼굴을 잡고, 종료 시 원위치로 복구한다.
+   (사무실 착석 동료는 rig 라 일어나 걸어와 문제 없음 → manager 에만 적용) */
+const BOSS_TALK_CAM = { x:12.95, z:0.20, eyeY:1.80, tx:13.9, tz:1.5, pitch:-0.30 };
+let _bossCamSave = null;
+function applyBossTalkCam(){
+  _bossCamSave = { x:camPos.x, z:camPos.z, camEyeY, targetEyeY, yaw, pitch, yawMin, yawMax, pitchMin, pitchMax };
+  const c = BOSS_TALK_CAM;
+  camPos.x = c.x; camPos.z = c.z;
+  camEyeY = c.eyeY; targetEyeY = c.eyeY;
+  yaw = Math.atan2(-(c.tx-c.x), -(c.tz-c.z));
+  pitch = c.pitch;
+  yawMin = yaw-0.6; yawMax = yaw+0.6; pitchMin = -0.6; pitchMax = 0.15;   // 대화 중 드래그 클램프(과회전 방지)
+}
+function restoreBossTalkCam(){
+  if(!_bossCamSave) return;
+  const s = _bossCamSave; _bossCamSave = null;
+  camPos.x = s.x; camPos.z = s.z;
+  camEyeY = s.camEyeY; targetEyeY = s.targetEyeY;
+  yaw = s.yaw; pitch = s.pitch;
+  yawMin = s.yawMin; yawMax = s.yawMax; pitchMin = s.pitchMin; pitchMax = s.pitchMax;
+}
 function registerSeated(key, obj, baseRotY, seatCenter){
   const cfg = DESK_SEATS[key] || {};
   const seat = { x: seatCenter.x, z: seatCenter.z };
@@ -4542,6 +4567,7 @@ async function sendTalk(){
 }
 function closeTalk(){
   $('ovTalk').classList.remove('open');
+  if(G.talkKey==='manager') restoreBossTalkCam();   // 김팀장 전용 카메라였을 때만 원위치 복구(사무실 동료 대화 영향 없음)
   G.talkKey = null; G._talkBusy = false;
   walkLock(false); G.talkActive = null;    // 대화 종료 → updateSeatedTalk 가 NPC 를 baseRotY(착석 방향)로 복귀
 }
