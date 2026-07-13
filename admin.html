@@ -301,12 +301,27 @@ function renderReports(){
   }).join('') || '<tr><td colspan="9" style="color:#8b93a5;text-align:center;padding:26px">보고서가 없습니다</td></tr>';
 }
 function safe(s){ try{ return JSON.parse(s)||{}; }catch(e){ return {}; } }
+/* 세션 성장 곡선 — 상세 보고서용 렌더 (소통·판단 2축) */
+function growthOne(g){
+  if(!g) return '—';
+  if(g.verdict==='hold') return '보류(표본 '+g.n+'건)';
+  const v = g.verdict==='up'?'↗ 향상':g.verdict==='down'?'↘ 하락':'→ 정체';
+  return v+' '+g.early+'→'+g.late+' ('+(g.delta>0?'+':'')+g.delta+')';
+}
+function growthDetail(gr){
+  if(!gr) return '';
+  return '<h4>세션 성장 곡선 (하루 초반→후반)</h4><ul>'+
+    '<li>업무 커뮤니케이션(이메일): '+growthOne(gr.comm)+'</li>'+
+    '<li>문제해결·상황판단: '+growthOne(gr.judge)+'</li></ul>'+
+    '<div style="font-size:11px;color:#9aa3b5;margin:-4px 0 8px">※ 같은 하루의 초반/후반 비교 — 하락이 곧 역량 저하를 의미하지 않음</div>';
+}
 function showDetail(i){
   const r = repFiltered()[i], sk = safe(r.skills), d = safe(r.detail);
   $('dlTitle').textContent = r.name + ' — ' + r.group + ' 상세 보고서';
   let h = '<div style="font-size:13px;color:#5b6474;margin-bottom:12px">'+r.dept+' · '+r.culture+' · 총점 <b style="font-size:17px;color:#1c2333">'+r.total+'</b> ('+r.grade+' 등급) · 처리 '+ (d.doneCount||0)+'/'+(d.arrivedCount||0)+'건</div>';
   h += SKILL_ORDER.map(n=>'<div class="skillbar"><span>'+n+'</span><div class="bar"><div class="fill" style="width:'+(sk[n]||0)+'%"></div></div><b>'+(sk[n]||0)+'</b></div>').join('');
   const list = (t,arr)=> arr&&arr.length ? '<h4>'+t+'</h4><ul>'+arr.map(x=>'<li>'+(typeof x==='object'? (x.subj+' — '+x.score+(t.includes('작업')?'%':'점')) : x)+'</li>').join('')+'</ul>' : '';
+  h += growthDetail(d.growth);
   h += list('이메일 첨삭', d.emails) + list('실무 작업 정확도', d.works) + list('잘한 점', d.goods) + list('개선점', d.fixes) + list('놓친 업무', d.missed);
   $('dlBody').innerHTML = h;
   $('dlg').showModal();
@@ -317,11 +332,12 @@ window.showDetail = showDetail; window.revoke = revoke;
 $('btnRepCsv').onclick = ()=>{
   const rows = repFiltered();
   if(!rows.length){ alert('다운로드할 보고서가 없습니다'); return; }
-  const head = ['이름','그룹','부서','직급','조직문화','총점','등급','문제해결지수','처리건수','도착건수', ...SKILL_ORDER, '잘한점','개선점','제출시각'];
+  const head = ['이름','그룹','부서','직급','조직문화','총점','등급','문제해결지수','처리건수','도착건수', ...SKILL_ORDER, '소통성장','판단성장','잘한점','개선점','제출시각'];
   const lines = rows.map(r=>{
-    const sk = safe(r.skills), d = safe(r.detail);
+    const sk = safe(r.skills), d = safe(r.detail), gr = d.growth||{};
     return [r.name, r.group, r.dept, d.rank||'', r.culture, r.total, r.grade, d.psScore!=null?d.psScore:'', d.doneCount||'', d.arrivedCount||'',
       ...SKILL_ORDER.map(n=>sk[n]!=null?sk[n]:''),
+      growthOne(gr.comm), growthOne(gr.judge),
       (d.goods||[]).join(' / '), (d.fixes||[]).join(' / '), r.submittedAt
     ].map(csvEsc).join(',');
   });

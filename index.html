@@ -702,6 +702,7 @@
   <div class="rp-meta" id="rpMeta"></div>
   <div class="rp-total"><b id="rpTotal">0</b><span class="grade" id="rpGrade"></span><p id="rpSummary"></p></div>
   <div class="rp-sec"><h2>역량별 평가</h2><div class="rp-skills-flex"><canvas id="rpRadar"></canvas><div id="rpSkills"></div></div></div>
+  <div class="rp-sec" id="rpGrowthWrap"><h2>세션 성장 곡선 (하루 안에서의 변화)</h2><div id="rpGrowth"></div></div>
   <div class="rp-sec"><h2>최종 점수 산출 내역 (직급 가중치)</h2><div class="rp-card" id="rpCalc"></div></div>
   <div class="rp-sec" id="rpAIWrap" style="display:none"><h2>🤖 AI 종합 코멘트</h2><div class="rp-card" id="rpAI" style="line-height:1.9"></div></div>
   <div class="rp-sec"><h2>문제해결력 진단 &amp; 성장 가이드</h2><div id="rpPS"></div></div>
@@ -6695,8 +6696,10 @@ async function generateAiReportSummary(d){
 [보완] 업무 제목을 인용한 보완점 1~2가지 (1~2문장)
 [내일의 조언] 내일의 실무를 위한 실행 조언 1가지 (1문장)
 말투: 정중하고 객관적인 존댓말. 과장·인격 평가 금지.
+[강점] 또는 [보완] 중 한 곳에는 아래 [세션 성장] 결과(향상/정체/하락/보류)를 1회 자연스럽게 반영하라. 단 하락은 "오후 난도·피로 영향일 수 있다"는 맥락과 함께 언급하고 역량 저하로 단정하지 마라.
 [플레이어] ${d.name} · ${d.dept} · ${d.rank} · ${d.culture}
 [결과] 총점 ${d.total} (${d.grade}등급) · 처리 ${d.doneCount}/${d.arrivedCount}건 · 상급자 확인 ${d.confirmCount}회
+[세션 성장 (하루 초반→후반)] ${d.growthLines||'측정 보류'}
 [역량 점수] ${JSON.stringify(d.skills)}
 [행동 기록 (제목|행동|점수|최적여부)]
 ${d.logLines}
@@ -6739,54 +6742,133 @@ async function lunchCheckIn(){
   if($('ovPC').classList.contains('open') && G.tab==='msg') renderTab();
 }
 
-/* ----- AI 채점 (Claude API) ----- */
+/* ----- AI 채점 (Claude API) -----
+   프롬프트 캐싱 구조: [정적 프리픽스 SYS_PREFIX] = 반(직급+부서+문화) 공통 루브릭·정의·스키마
+   (PII·타임스탬프 없음 → byte-identical → 캐시 공유). [동적부 DYNAMIC_BODY] = 작성자 PII·받은 메시지·
+   플레이어 답장·최종 채점 지시. api() 에는 하위호환용 prompt(=프리픽스+동적부)와 sysPrefix/userBody 를 함께 전송.
+   프리픽스는 rank+dept+cult 로 메모이즈 (Haiku 4.5 최소 캐시 프리픽스 4096토큰 충족 목표로 루브릭을 상세화). */
+const _sysPrefixCache = {};
+function buildSysPrefix(R, C, D){
+  const ck = G.rank+'|'+G.dept+'|'+G.cult;
+  if(_sysPrefixCache[ck]) return _sysPrefixCache[ck];
+  const s = `당신은 기업 실무 시뮬레이션의 중립적 업무 평가 시스템이다. 특정 인물(사수·상사)의 말투가 아니라, 인물 색채가 없는 전문 코치의 관점에서 플레이어가 쓴 업무 답장(업무 이메일 또는 사내 메신저)을 평가한다. 이 평가의 목적은 점수를 매기는 것 자체가 아니라, 플레이어가 다음 업무에서 더 정확하고 정중하게 소통하도록 구체적인 기준을 되돌려 주는 것이다. 플레이어의 직급이 평가자보다 높을 수 있으므로 하대하거나 가르치는 뉘앙스("~해 봐요", "~했어요?")보다 객관적 서술("~가 누락되었습니다", "~하면 더 명확합니다")을 사용한다. 잘한 점은 근거와 함께 명확히 인정하고, 부족한 점은 "이 표현은 수신자가 오해할 수 있습니다"처럼 사실 기반으로 짚는다. 사람의 인격·성격·태도 전반을 규정하는 평가(예: "무성의하다", "예의가 없다")는 하지 않고, 언제나 문장·구성·정보라는 관찰 가능한 대상에 한정해 평가한다.
+
+[평가 대상 직급의 초점 — 반드시 반영]
+이번 채점의 평가 대상 직급은 "${R.name}"이다. 직급 초점: ${R.focus}
+직급별 채점 무게중심 원칙(현재 직급 기준을 우선 적용하되, 배점 수치는 모든 직급에 동일):
+- 신입사원: 이메일 5요소와 비즈니스 매너의 완성도를 우선한다. 아직 판단보다 형식·태도의 정확성을 먼저 본다. 형식이 흔들리면 내용이 좋아도 상위 점수를 주지 않는다. 다만 형식만 갖추고 용건이 빈약하면 clarity에서 조정한다.
+- 주임·대리: 형식이 갖춰졌다는 전제에서 실무 정확성·상황판단을 더 무겁게 본다. 규정 근거를 대었는가, 구체적 조치와 기한을 제시했는가, 사고·오류 상황에서 정정→공유→재발 방지의 순서를 밟았는가를 확인한다.
+- 팀장(관리자): 문제해결력(문제 정의 → 원인 진단 → 대안 비교 → 실행·확인)과 의사결정의 품질을 최우선한다. 결정을 회피하거나(무조건 보류·상급자 확인으로 넘김) 책임을 전가하는 답장은 강하게 감점한다. 반대로 리스크를 인식하고 대비책을 함께 제시하면 명확히 가점한다.
+평가 대상 직급의 초점을 다른 직급의 기준보다 우선 적용한다. 단, 채점 배점(구성요소 각 12점, tone 0~20, clarity 0~20, 총점 0~100)은 직급과 무관하게 동일하게 적용해 일관성을 유지한다.
+
+[회사·부서 맥락]
+회사: edmakers (본사 주소: 서울 강남구 테헤란로 32, 본사 8층). 평가 대상 부서: "${D.name}" — 담당 업무 범위: ${D.job}.
+답장의 용건·조치가 이 부서의 업무 범위와 책임에 부합하는지, 이 부서가 실제로 처리할 수 있는 사안인지를 clarity 평가에 반영한다. 부서 권한 밖의 사안(예: 언론 대응, 계약 체결, 타 부서 고유 권한)을 임의로 확정 처리했다면 지적하고, 담당 부서로 전달하거나 상급자 확인을 거치는 것이 옳은 상황이라면 그 판단을 인정한다. 회사·부서명이나 담당자 정보를 답장에서 잘못 표기했다면 clarity에서 감점한다.
+
+[오늘 날짜] 2026년 7월 7일 화요일. 답장에 등장하는 날짜·기한, "오늘/내일/이번 주/다음 주" 같은 상대 표현은 모두 이 기준일로 해석해 판단한다. 이미 지난 날짜를 향후 기한으로 제시했거나, 요일·기한 계산이 어긋났거나, 마감이 있는 요청에 구체적 처리 시각을 제시하지 않았다면 clarity에서 감점한다. 반대로 "오늘 15시까지", "금일 중", "영업일 기준 3일 내"처럼 확인 가능한 기한을 명시하면 가점한다.
+
+[조직문화] "${C.name}" — ${C.toneGuide}
+조직문화별 톤 가이드:
+- 수직적 조직: 직급 호칭("○○님", "○○ 팀장님")과 "~드립니다 / ~부탁드립니다 / ~하겠습니다" 수준의 격식을 일관되게 유지하는 것이 적절하다. 보고·결재 라인을 건너뛰거나 상급자에게 통보하듯 쓰는 표현은 감점 요소다. 다만 과도하게 장황하거나 지나친 미사여구는 오히려 명확성을 해치므로 가점하지 않는다.
+- 수평적 조직: 두괄식(결론을 먼저)과 필요한 정보만 담은 간결함이 신뢰를 만든다. 격식보다 속도와 명확성을 높게 본다. 다만 무례하거나 성의 없는 표현, 반말은 조직문화와 무관하게 감점한다. 간결함은 "짧다"가 아니라 "핵심이 빠짐없이 담기되 군더더기가 없다"는 뜻이다.
+어느 문화든, 상대가 즉시 다음 행동을 할 수 있도록 정보가 정리되어 있으면 좋은 답장이다.
+
+[작성자(플레이어) 정보 사용 규칙 — 개인정보는 동적 블록 기준]
+서명·연락처·이메일 주소의 정확성은 답장 하단에 매 채점마다 함께 전달되는 [작성자 정보] 블록의 값(이름·소속·내선·이메일)을 기준으로 평가한다. example(모범 답안)에서 서명이 필요하면 그 블록의 값을 그대로 사용한다. 이 정적 프리픽스에는 특정 개인의 정보를 담지 않는다.
+
+[채널별 채점 기준 — 두 채널 통합 루브릭]
+평가 대상 답장의 채널은 동적 블록의 [채널] 항목으로 지정된다. 채널에 따라 아래 기준 중 하나를 적용한다.
+
+■ 업무 이메일인 경우 — 구성요소 5가지를 각각 채점한다(각 12점, 합 60점). 각 항목은 충족하면 true(12점), 미충족이면 false(0점)로 표기한다.
+1) greeting(인사말): 첫머리에 수신자·상황에 맞는 인사말이 있는가. 예) "안녕하세요, ○○팀 △△△입니다." 수직적 조직이면 직함 호칭을 포함하는 편이 자연스럽다. 인사말이 전혀 없이 용건부터 시작하면 false. 계절·상황 인사가 지나치게 길면 형식은 충족(true)이되 tone에서 장황함을 반영할 수 있다.
+2) main(용건): 용건이 명확하고 간결한가. 결론을 앞세우고(두괄식) 필요한 정보(무엇을·언제까지·어떻게·왜)를 담았는가. 용건이 모호하거나 핵심(요청받은 답, 수치, 조치)이 빠졌으면 false. 여러 건이 섞였으면 항목화되어 읽는 사람이 각각을 구분할 수 있어야 한다.
+3) closing(맺음 인사): "감사합니다", "잘 부탁드립니다", "확인 부탁드립니다", "회신 기다리겠습니다" 등 상황에 맞는 맺음이 있는가. 용건만 끝내고 뚝 끊기면 false.
+4) signature(서명): "○○○ 드림 / 올림 / 배상" 형식의 서명이 있는가. 이름만 덩그러니 있거나 서명이 아예 없으면 false. 서명의 이름은 [작성자 정보]의 이름과 일치해야 한다.
+5) contact(연락처): 서명 아래 내선·전화·이메일 등 연락 정보가 있는가. 하나라도 있으면 true.
+형식 문구(인사·맺음·서명)의 유무는 위 checks가 담당하므로 example에는 넣지 않는다. tone과 clarity는 아래 기준으로 별도 채점한다.
+
+■ 사내 메신저인 경우 — 이메일 격식을 요구하지 않는다. greeting / closing / signature / contact 는 무조건 true 로 표기(평가에서 제외)하고, 인사말·맺음·서명·연락처가 없다고 감점하거나 fix에서 지적하지 않는다. 메신저는 편하게 주고받는 채널이므로 짧고 자연스러운 대화체가 오히려 정답이다. 이모지, "넵", 구어체, 가벼운 존댓말을 모두 허용한다. main(용건)만 실질적으로 평가한다: 한 줄이라도 용건(무엇을 확인/처리하겠다, 언제까지 하겠다)이 담겼는가. 메신저에서 형식이 없다는 이유로 점수를 깎지 않도록 특히 주의한다.
+
+[tone(0~20) 채점 앵커]
+- 이메일: 조직문화에 맞는 격식·어조를 본다. 수직적 조직에서 "습니다/십니까/드립니다"체가 일관되면 16~20, 존댓말이 흔들리거나 명령조가 섞이면 9~13, 반말·퉁명·무성의한 표현이 있으면 0~8. 수평적 조직에서 간결하고 예의 있으면 14~18, 지나치게 장황하거나 과한 격식으로 오히려 읽기 어려우면 10~13.
+- 메신저: 가벼운 존댓말이면 충분하다(16~20). 반말·무성의·퉁명한 표현은 6~10. 수직적 조직이어도 메신저는 가벼운 존댓말이면 감점하지 않는다. 캐주얼함 자체는 감점 사유가 아니다.
+앵커 예시) "확인했습니다. 오늘 15시까지 회신드리겠습니다." → tone 상(정중하고 명확). "넵 확인해서 이따 드릴게요~" → 메신저면 tone 상, 이메일이면 tone 중하(격식이 부족). "그거 그냥 알아서 처리하세요." → tone 하(퉁명·책임 전가).
+
+[clarity(0~20) 채점 앵커]
+용건 전달력과 [상황과 채점 포인트]의 반영 여부를 본다. 상황이 요구하는 조치·수치·절차(규정·금액·기한·담당·근거)를 정확히 반영하면 16~20, 방향은 맞지만 핵심 수치·절차 일부를 놓치면 9~13, 용건이 불명확하거나 잘못된 정보를 담았으면 0~7.
+- 실무 작업(계산·검토·작성)이 필요한 업무인데 수행하지 않고 답장만 보냈다면 clarity에서 감점하고 fix에서 그 점을 지적한다.
+- 요청받은 자료·내역을 완성해 첨부했다면 clarity에 가점하고 good에서 언급한다. 첨부를 열지 않고 회신했다면 fix에서 지적한다.
+- factCheck 키워드(인수인계서·자료·규정의 수치)를 정확히 인용했는지 확인해 반영 정도를 clarity에 반영한다. 수치를 임의로 지어내면 강하게 감점한다.
+앵커 예시) 환불 문의에 "환불 규정상 구매 후 7일 이내 미개봉이면 전액 환불되며, 영업일 기준 3일 내 처리됩니다"처럼 규정·기한을 정확히 인용 → clarity 상. "확인 후 처리하겠습니다"만 있고 규정·기한이 없음 → clarity 중하(구체성 부족). 요청은 A인데 B를 답함 → clarity 하.
+
+[score(0~100) 산출 규칙]
+score = 구성요소 점수 합 + tone(0~20) + clarity(0~20). 이메일은 구성요소 5개 각 12점으로 최대 60점, 메신저는 greeting/closing/signature/contact 4개를 true로 두어 48점 + main(최대 12점) 형태로 계산한다. 상황 포인트(규정·숫자·절차·기한)를 놓치면 clarity에서 감점되어 총점이 자연히 낮아진다. 최종 score는 0~100 범위의 반올림 정수로 출력한다. 형식이 완벽해도 용건·판단이 부실하면 상위 점수를 주지 않고, 반대로 판단이 훌륭해도 기본 형식(이메일의 경우)이 무너지면 그만큼 반영한다.
+
+[good / fix / say / example 작성 규칙]
+- say: 한 문장으로 된 총평. 점수대에 맞는 톤(잘함/보완 필요)을 담되 인격 평가는 금지.
+- good: 잘한 점 최대 2개. 각 1문장, 관찰 가능한 근거(어떤 문장·정보·구성이 좋았는지)를 담는다.
+- fix: 아쉬운 점 최대 2개. 각 1문장, 무엇을 어떻게 바꾸면 되는지 실행 가능한 형태로.
+- example: 이 상황에서만 쓸 수 있는 "결정적 문장" 1~2개다. [상황과 채점 포인트]의 조치·수치·절차를 실제 문장으로 시연한다. 인사말·맺음·서명처럼 어느 메일에나 똑같은 형식 문구는 절대 포함하지 않는다(그건 checks가 담당). 서명이 필요하면 [작성자 정보] 블록의 값을 사용한다.
+전반적으로 응답은 짧게 유지한다: 수식어·부연은 넣지 않고 핵심만 담는다. 말투는 정중하고 중립적인 평가 톤을 일관되게 유지한다.
+
+[자주 나오는 감점 사례 — 채점 시 참고]
+- 용건을 뒤로 미루고 배경 설명부터 길게 늘어놓아 결론이 늦게 나온다 → clarity 감점(두괄식 아님).
+- "확인 후 처리하겠습니다", "알아보겠습니다"처럼 언제·어떻게가 없는 막연한 약속만 있다 → clarity 중하.
+- 요청받은 자료·수치를 답장 본문이나 첨부로 제시하지 않고 말로만 "보내드리겠습니다" 한다 → clarity 감점.
+- 규정·금액·기한을 임의로 지어내거나 인수인계서·첨부와 다른 숫자를 쓴다 → clarity 강한 감점(사실 오류).
+- 권한 밖 사안(언론·계약·타 부서 고유 업무)을 확인 없이 단독 확정 처리한다 → 판단 부적절로 지적.
+- 이메일에서 서명이 없거나 이름만 있고 "드림/올림"이 없다 → signature false. 연락처가 전혀 없다 → contact false.
+- 수직 조직인데 반말·명령조가 섞이거나, 수평 조직인데 지나치게 장황하다 → tone 감점.
+- 마감이 있는 요청에 처리 시각을 명시하지 않는다 → clarity 감점.
+
+[자주 나오는 가점 사례 — 채점 시 참고]
+- 첫 문장에서 결론·핵심 조치를 밝히고, 이어서 근거·수치·기한을 정리했다 → clarity 상, good에서 언급.
+- 규정·인수인계서의 수치를 정확히 인용해 답의 신뢰도를 높였다 → clarity 상.
+- 요청 자료를 완성해 첨부하거나 본문에 표·항목으로 정리했다 → clarity 가점.
+- 사고·오류 상황에서 정정 → 관련자 공유 → 재발 방지 순으로 대응했다 → 판단 가점(주임·팀장 특히).
+- 결정과 함께 리스크·대안을 한 줄로 덧붙였다 → 팀장 트랙 가점.
+- 문화에 맞는 어조를 일관되게 유지하며 읽는 사람이 다음 행동을 바로 할 수 있게 정리했다 → tone·clarity 가점.
+
+[채점 절차 — 순서대로 적용]
+1) [채널]을 확인해 이메일/메신저 루브릭 중 하나를 고른다. 2) (이메일이면) 구성요소 5가지를 각각 true/false로 판정한다. 메신저면 4개 형식 항목을 true로 고정하고 main만 판정한다. 3) tone(0~20)을 앵커에 맞춰 매긴다. 4) [상황과 채점 포인트]와 대조해 clarity(0~20)를 매긴다. 5) 배점 규칙으로 score를 합산해 0~100 정수로 만든다. 6) say·good·fix·example을 분량 규칙에 맞춰 작성한다. 7) 지정된 JSON 스키마 하나만 출력한다.
+
+[출력 형식 — 아래 JSON 스키마만 출력. 마크다운 백틱, 그 밖의 어떤 텍스트도 절대 금지]
+{"greeting":true,"main":true,"closing":true,"signature":true,"contact":true,"tone":15,"clarity":15,"score":80,"say":"한 줄 총평","good":["잘한 점 1","잘한 점 2"],"fix":["아쉬운 점 1"],"example":"모범 답안 전문"}
+위 스키마의 키 이름과 자료형(불리언/정수/문자열/배열)을 정확히 지켜 출력한다. 실제 채점 대상은 이 프리픽스 다음에 이어지는 동적 블록에 담겨 전달된다.`;
+  _sysPrefixCache[ck] = s;
+  return s;
+}
 async function gradeWithAI(it, mode, text, attText){
   const D = DEPTS[G.dept], C = CULTURES[G.cult];
   const channel = it.type==='msg' ? '사내 메신저(간결함이 미덕, 서명·연락처 불필요)' : '업무 이메일';
   const R = RANKS[G.rank];
-  const prompt = `당신은 기업 실무 시뮬레이션의 중립적 업무 평가 시스템이다. 특정 인물(사수·상사)의 말투가 아니라, 인물 색채 없는 전문 코치의 관점에서 ${R.name} 직급 플레이어가 쓴 ${channel} 답장을 평가한다. 플레이어의 직급이 평가자보다 높을 수 있으므로 하대하거나 가르치는 뉘앙스("~해 봐요", "~했어요?")보다 객관적 서술("~가 누락되었습니다", "~하면 더 명확합니다")을 사용한다.
-
-[직급별 평가 초점 — 반드시 반영] ${R.focus}
-
-[작성자(플레이어) 정보] 이름: ${G.player.name} / 소속: ${D.name} / 내선: ${G.player.ext} / 이메일: ${G.player.email} — 서명·연락처는 이 정보 기준으로 평가하고, example의 서명에도 이 정보를 사용하라.
-[회사/부서] ${D.name} (${D.job})
-[오늘 날짜] 2026년 7월 7일 화요일 — 날짜·기한 판단은 이 기준으로 평가하라
-[조직문화] ${C.name} — ${C.toneGuide}
+  const sysPrefix = buildSysPrefix(R, C, D);
+  const userBody = `[작성자 정보] 이름: ${G.player.name} / 소속: ${D.name} / 내선: ${G.player.ext} / 이메일: ${G.player.email}
+[채널] ${channel}
 [받은 메시지] 발신: ${it.from} (${it.role}) / 제목: ${it.subj}
 ${it.body}
 [상황과 채점 포인트] ${it.grade}
 [작성 유형] ${mode==='approval-reject'?'기안 반려 의견':mode==='reject'?'정중한 거절 회신':'답장'}
-
 [첨부파일] ${typeof ATTACHDEFS!=='undefined'&&ATTACHDEFS[it.id] ? '이 메일에는 첨부('+ATTACHDEFS[it.id].name+')가 있었고, 플레이어는 '+(it.attachRead?'열어서 확인함':'열지 않음. 확인 없이 회신한 점을 fix에서 지적할 것')+'.' : '없음'}
 [실무 작업 수행 결과] ${it.workScore!=null ? '플레이어가 회신 전에 실무 작업을 직접 수행함 (이 결과가 회신에 첨부된다고 가정):\n'+it.workSummary : (typeof WORKDEFS!=='undefined'&&WORKDEFS[it.id] ? '이 업무에는 수행해야 할 실무 작업(계산/검토/작성)이 있었으나 플레이어가 수행하지 않고 답장만 보냄. clarity에서 감점하고 fix에서 지적할 것.' : '해당 없음')}
-
 [플레이어가 회신에 첨부한 파일] ${attText ? attText + '\n→ 첨부 내용의 적절성(요청 자료인지, 기입이 완성됐는지)을 clarity에 반영하라. 내역·자료를 요구받은 업무에 완성된 파일을 첨부했다면 명확히 가점하고 good에서 언급하라.' : '없음. 자료·내역을 요구받은 업무라면 파일 첨부가 없었음을 fix에서 지적하라.'}
 
 [플레이어가 쓴 답장]
 ${text}
 
-채점 기준:
-${it.type==='msg'
-? `- 메신저 채점 — 이메일 격식을 요구하지 말 것: greeting/closing/signature/contact는 무조건 true로 표기(평가 제외). 메신저는 편하게 주고받는 채널이므로 짧고 자연스러운 대화체가 오히려 정답이며, 인사말·맺음·서명이 없다고 감점하거나 fix에서 지적하지 않는다. 이모지·"넵"·구어체 허용.
-- tone(0~20): 예의 있는 어조인가(반말·무성의·퉁명은 감점, 캐주얼함은 감점 아님. 수직적 조직이어도 메신저는 가벼운 존댓말이면 충분). clarity(0~20): 용건·내용의 정확성, 상황 채점 포인트 반영 여부.`
-: `- 구성요소 5가지: greeting(인사말), main(용건이 명확·간결한가), closing(맺음 인사), signature(서명, "○○○ 드림" 형식), contact(연락처/이메일 등 서명 정보).
-- tone(0~20): 조직문화에 맞는 격식·어조. clarity(0~20): 용건 전달력, 상황 채점 포인트 반영 여부.`}
-- score(0~100): 구성요소 각 12점(60) + tone + clarity. 상황 포인트(규정·숫자·절차)를 놓치면 clarity에서 감점.
-- 말투: 정중하고 중립적인 평가 톤. 잘한 점은 명확히 인정하고, 부족한 점은 "이 표현은 수신자가 오해할 수 있습니다"처럼 객관적으로 짚는다. 인격 평가 금지.
-- example: 이 상황에서만 쓸 수 있는 "결정적 문장" 1~2개 — [상황과 채점 포인트]의 조치·수치·절차를 실제 문장으로 시연. 인사말·맺음·서명 같은 어느 메일에나 똑같은 형식 문구는 절대 포함 금지 (그건 checks가 담당).
-- 응답은 최대한 짧게: say 1문장, good 최대 2개·fix 최대 2개(각 1문장, 핵심만). 수식어·부연 금지.
-
-아래 JSON만 출력하라. 마크다운 백틱, 다른 텍스트 절대 금지:
-{"greeting":true,"main":true,"closing":true,"signature":true,"contact":true,"tone":15,"clarity":15,"score":80,"say":"한 줄 총평","good":["잘한 점 1","잘한 점 2"],"fix":["아쉬운 점 1"],"example":"모범 답안 전문"}`;
+위 기준(정적 프리픽스의 채널별 루브릭·5요소 정의·tone/clarity 앵커·배점·조직문화 가이드)에 따라, 위 [플레이어가 쓴 답장]을 [채널]에 맞게 채점하라. 지정된 JSON 스키마 객체 하나만 출력하고, 마크다운 백틱이나 그 밖의 텍스트는 절대 포함하지 마라.`;
+  const prompt = sysPrefix + '\n' + userBody;   // 레거시(하위호환): 구 Code.gs는 이 prompt만 사용
   let raw;
   if(BACKEND_URL){                                       // 배포 환경: GAS 프록시 경유 (실 AI 첨삭)
-    const r = await api({action:'ai', purpose:'grade', key:G.accessKey||'', prompt});
+    const r = await api({action:'ai', purpose:'grade', key:G.accessKey||'', prompt, sysPrefix, userBody});
     if(!r.ok || !r.text) throw r.error || 'backend-ai-unavailable';
     raw = r.text;
   } else {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000, messages:[{role:'user', content:prompt}]})
+      body: JSON.stringify({model:'claude-sonnet-4-6', max_tokens:1000,
+        system:[{type:'text', text:sysPrefix, cache_control:{type:'ephemeral', ttl:'1h'}}],
+        messages:[{role:'user', content:userBody}]})
     });
     const data = await resp.json();
     raw = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
@@ -6974,6 +7056,86 @@ function endDay(){
 
 function avg(arr){ return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : 0; }
 
+/* ----- 세션 성장 곡선 (정직 측정: 소통·판단 2축만) -----
+   측정 가능 축은 소통(이메일 첨삭)·판단(행동 선택) 2개뿐. 시간/위임/정보/압박은 전일 집계·단일
+   이벤트라 하루 안의 변화를 볼 수 없어 제외(정직 표기). 축별 처리순서로 정렬해 중앙값 이등분,
+   앞 절반(early)·뒤 절반(late)의 평균 차이 Δ 로 향상/정체/하락을 판정. 표본 부족(n<4)이면 보류. */
+const GROWTH_TH = 8;       // Δ 임계 — 강사 조정용. |Δ|>=8 이면 향상/하락, 그 안이면 정체
+const GROWTH_MIN_N = 4;    // 축별 최소 이벤트 수 — 미만이면 판정 보류
+function splitGrowth(pts){
+  const n = pts.length;
+  if(n < GROWTH_MIN_N) return {early:null, late:null, delta:null, verdict:'hold', n:n};
+  const s = pts.slice().sort((a,b)=>a.t-b.t);
+  const half = Math.floor(n/2);
+  const mean = a => Math.round(a.reduce((x,p)=>x+p.v,0)/a.length);
+  const early = mean(s.slice(0,half)), late = mean(s.slice(half));
+  const delta = Math.round(late - early);
+  const verdict = delta>=GROWTH_TH ? 'up' : delta<=-GROWTH_TH ? 'down' : 'flat';
+  return {early:early, late:late, delta:delta, verdict:verdict, n:n};
+}
+function computeGrowth(){
+  const byId = {}; (G.items||[]).forEach(i=>{ byId[i.id]=i; });
+  /* 소통(comm): 이메일 첨삭만(!isMsg) — 첨삭 id → items.doneAt(처리 시각)로 조인 */
+  const commPts = (G.emailScores||[]).filter(e=>!e.isMsg).map(e=>{
+    const it = byId[e.id];
+    return (it && it.doneAt!=null) ? {t:it.doneAt, v:e.score} : null;
+  }).filter(Boolean);
+  /* 판단(judge): actionLogs 중 items에 속하고 type!=='msg' (퀘스트 q_ 로그는 items에 없어 자연 제외) */
+  const judgePts = (G.actionLogs||[]).map(l=>{
+    const it = byId[l.id];
+    return (it && it.type!=='msg' && l.time!=null && l.score!=null) ? {t:l.time, v:l.score} : null;
+  }).filter(Boolean);
+  return { comm: splitGrowth(commPts), judge: splitGrowth(judgePts) };
+}
+function growthText(name, g){
+  if(g.verdict==='hold') return '표본이 적어(총 '+g.n+'건) 판정을 보류합니다.';
+  const base = '초반 '+g.early+' → 후반 '+g.late;
+  if(g.verdict==='up')   return base+' (+'+g.delta+'). 하루 안에서 '+name+' 수행이 개선됐습니다. 첨삭·코칭을 반영한 결과로 보입니다.';
+  if(g.verdict==='down') return base+' ('+g.delta+'). 후반에 점수가 내려갔습니다. 오후 난도·압박·피로가 원인일 수 있으므로 역량 저하로 단정하지 마세요.';
+  return base+'. 수준을 유지했습니다. 후반 난도가 더 높았다면 유지도 선전입니다.';
+}
+function growthSummaryLine(growth){
+  const L = {comm:'소통(이메일)', judge:'판단'};
+  return ['comm','judge'].map(k=>{
+    const g = growth[k];
+    if(g.verdict==='hold') return L[k]+' 보류(표본'+g.n+')';
+    const v = g.verdict==='up'?'향상':g.verdict==='down'?'하락':'정체';
+    return L[k]+' '+v+' '+g.early+'→'+g.late+'('+(g.delta>0?'+':'')+g.delta+')';
+  }).join(' / ');
+}
+function renderGrowth(growth){
+  const el = $('rpGrowth'); if(!el) return;
+  const AX = [['comm','업무 커뮤니케이션(이메일)'], ['judge','문제해결·상황판단']];
+  const badge = v =>
+    v==='up'   ? '<span style="color:#3ecf8e;font-weight:800">↗ 향상</span>' :
+    v==='down' ? '<span style="color:#e0a020;font-weight:800">↘ 하락</span>' :
+    v==='flat' ? '<span style="color:#9aa3b5;font-weight:800">→ 정체</span>' :
+                 '<span style="color:#9aa3b5;font-weight:800">— 보류</span>';
+  let html = AX.map(([k,label])=>{
+    const g = growth[k];
+    const nums = g.verdict==='hold'
+      ? '<span style="color:#9aa3b5">표본 '+g.n+'건</span>'
+      : '<span style="font-family:monospace">'+g.early+'</span> <span style="opacity:.55">→</span> <span style="font-family:monospace">'+g.late+'</span> '+
+        '<span style="font-family:monospace;color:'+(g.delta>0?'#3ecf8e':g.delta<0?'#e0a020':'#9aa3b5')+'">('+(g.delta>0?'+':'')+g.delta+')</span>';
+    return '<div class="rp-card"><b class="t">'+label+' &nbsp; '+badge(g.verdict)+'</b>'+
+      '<div style="margin:2px 0 6px;font-size:14px">'+nums+'</div>'+
+      '<div style="font-size:13px;color:#c9d6f2">'+growthText(label, g)+'</div></div>';
+  }).join('');
+  html += '<div style="font-size:11.5px;color:#9aa3b5;margin-top:2px">※ 같은 하루의 초반/후반을 비교한 값입니다. 후반이 더 어려울 수 있어 하락이 곧 역량 저하를 의미하지는 않습니다. 시간관리·위임·정보·압박은 전일 집계라 성장 곡선으로 측정하지 않습니다.</div>';
+  el.innerHTML = html;
+}
+function growthHtmlLight(growth){
+  const AX = [['comm','업무 커뮤니케이션(이메일)'], ['judge','문제해결·상황판단']];
+  const badge = v => v==='up'?'<b style="color:#1a9e63">↗ 향상</b>':v==='down'?'<b style="color:#b7791f">↘ 하락</b>':v==='flat'?'<b style="color:#6b7280">→ 정체</b>':'<b style="color:#6b7280">— 보류</b>';
+  const rows = AX.map(([k,label])=>{
+    const g = growth[k];
+    const nums = g.verdict==='hold' ? '표본 '+g.n+'건' : g.early+' → '+g.late+' ('+(g.delta>0?'+':'')+g.delta+')';
+    return '<div class="box" style="margin:8px 0;font-size:13px"><div style="font-weight:700;color:#243b63">'+esc(label)+' &nbsp; '+badge(g.verdict)+'</div>'+
+      '<div style="font-family:monospace;margin:3px 0;color:#555">'+nums+'</div>'+
+      '<div style="color:#555">'+esc(growthText(label, g))+'</div></div>';
+  }).join('');
+  return rows + '<p style="font-size:11px;color:#9aa3b5;margin:4px 0 0">※ 같은 하루의 초반/후반 비교입니다. 후반이 더 어려울 수 있어 하락이 곧 역량 저하를 의미하지 않습니다.</p>';
+}
 function buildReport(){
   const D = DEPTS[G.dept], C = CULTURES[G.cult];
   const arrived = G.items.filter(i=>i.arrived);
@@ -7057,6 +7219,10 @@ function buildReport(){
   $('rpSkills').innerHTML = skills.map(([n,v])=>
     '<div class="skill-row"><span>'+n+'</span><div class="skill-bar"><div class="skill-fill" style="width:'+v+'%"></div></div><b>'+v+'</b></div>').join('');
   drawRadar($('rpRadar'), skills, R.weights, WKEY);
+
+  /* --- 세션 성장 곡선 (소통·판단 2축) --- */
+  const growth = computeGrowth();
+  renderGrowth(growth);
 
   /* --- 최종 점수 산출 내역 --- */
   $('rpCalc').innerHTML = '<b class="t">'+RANKS[G.rank].name+' 트랙 — 역량 점수 × 직급 가중치의 가중평균</b>' +
@@ -7162,7 +7328,7 @@ function buildReport(){
     key: G.accessKey||'', group: G.keyGroup||'',
     name: G.player.name, dept: D.name, culture: C.name,
     rank: RANKS[G.rank].name, psScore: Math.round(judge*0.6 + pressure*0.4),
-    total, grade,
+    total, grade, growth: growth,
     skills: Object.fromEntries(skills.map(([n,v])=>[n,v])),
     doneCount: done.length, arrivedCount: arrived.length,
     emails: G.emailScores.map(e=>({subj:e.subj, score:e.score})),
@@ -7179,6 +7345,7 @@ function buildReport(){
     confirmCount: logs.filter(l=>l.act==='confirm').length,
     skills: Object.fromEntries(skills.map(([n,v])=>[n,v])),
     logLines: logs.slice(0,20).map(l=>l.subj+'|'+actionName(l.act)+'|'+l.score+(l.act===l.best?'|최적':'')).join('\n'),
+    growthLines: growthSummaryLine(growth),
     emailLines: G.emailScores.map(e=>e.subj+'|'+e.score).join(' / '),
     workLines: arrived.filter(i=>i.workScore!=null).map(i=>i.subj+'|'+i.workScore+'%').join(' / '),
     missedLines: missedItems.map(i=>i.subj).join(' / ')
@@ -7224,6 +7391,7 @@ function buildReportHTML(){
     '<span style="font-size:13px;color:#555">문제해결력 지수 '+d.psScore+'점</span></div>'+
     (G.aiSummary ? sec('🤖 AI 종합 코멘트', '<div class="box" style="font-size:13.5px">'+fmtAiSummary(G.aiSummary)+'</div>') : '')+
     sec('역량별 평가', radarImg + Object.entries(d.skills).map(([n,v])=>bar(n,v)).join(''))+
+    (d.growth ? sec('세션 성장 곡선 (하루 안에서의 변화)', growthHtmlLight(d.growth)) : '')+
     sec('잘한 점', li(d.goods)) + sec('개선점', li(d.fixes))+
     sec('이메일 첨삭 결과', li(d.emails)) + sec('실무 작업 정확도', li(d.works)) + sec('놓친 업무', li(d.missed))+
     '<p style="margin-top:26px;font-size:11px;color:#9aa3b5">edmakers 오피스 업무 시뮬레이션 · 자동 생성 보고서</p>'+
