@@ -1563,10 +1563,10 @@ const COLLIDERS = [   // 가구 footprint 에 밀착(스테이션 접근점이 �
   {x0:-0.75, x1:0.75,  z0:-1.5, z1:-0.72},  // 박선임(mentor) 책상 @(0,-1.1)  뒷줄(플레이어 마주봄)
   {x0:-3.15, x1:-1.65, z0:-1.5, z1:-0.72},  // 이주임(female) 책상 @(-2.4,-1.1) 뒷줄
   // ── 가장자리 퀘스트 가구(절대 유지) ──
-  {x0:3.7,   x1:4.5,   z0:-3.25, z1:-2.6 },  // 복합기 @(4.1,-2.9)
-  {x0:4.9,   x1:5.9,   z0:-3.9,  z1:-3.4 },  // 서류 캐비닛 @(5.4,-3.65)
+  {x0:2.1,   x1:3.3,   z0:-3.85, z1:-2.55},  // 복합기 @(2.7,-3.2)
+  {x0:4.25,  x1:6.8,   z0:-4.6,  z1:-2.95},  // 서류 캐비닛(책장+서랍 일체형, 폭 넓음) @(5.5,-3.78)
   {x0:-5.9,  x1:-4.3,  z0:-4.0,  z1:-3.6 },  // 책장 @(-5.1,-3.8)
-  {x0:4.2,   x1:5.0,   z0:-3.75, z1:-2.95},  // 대형 화분 @(4.6,-3.35)
+  {x0:3.8,   x1:4.6,   z0:-2.9,  z1:-2.1 },  // 대형 화분(가운데·앞으로) @(4.2,-2.5)
   {x0:-6.3,  x1:-4.9,  z0:2.9,   z1:3.7 },   // 탕비실 코너 @(-5.6,3.2)
   {x0:3.1,   x1:4.1,   z0:2.6,   z1:3.85},   // 미팅 테이블 @(3.6,3.2)
   {x0:5.7,   x1:6.65,  z0:3.0,   z1:3.85},   // 우편/택배 수령대 @(6.1,3.4)
@@ -2214,7 +2214,7 @@ function init3D(){
     cpanel.position.set(0.12,0.855,0.18); cpanel.rotation.x=-Math.PI/2*0.55; copier.add(cpanel);
     const cled = new THREE.Mesh(new THREE.CircleGeometry(0.012,12), new THREE.MeshBasicMaterial({color:0x3ddb7c}));
     cled.position.set(0.26,0.7,0.301); copier.add(cled);
-    copier.position.set(4.1,0,-2.9); copier.rotation.y = -0.35; scene.add(copier); PROC.copier = copier;
+    copier.position.set(2.7,0,-3.2); copier.rotation.y = -0.35; scene.add(copier); PROC.copier = copier;
 
     const cab = new THREE.Group();
     const cbox = new THREE.Mesh(new THREE.BoxGeometry(0.9,1.9,0.45), std({color:0xb9bdc2, roughness:0.45, metalness:0.35}));
@@ -2227,7 +2227,7 @@ function init3D(){
       const hdl = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.022,0.02), std({color:0x74797f, metalness:0.7, roughness:0.3}));
       hdl.position.set(0,0.58+i*0.44,0.235); cab.add(hdl);
     }
-    cab.position.set(5.4,0,-3.65); scene.add(cab); PROC.cab = cab;
+    cab.position.set(5.5,0,-3.78); scene.add(cab); PROC.cab = cab;
   }
 
   /* ---- 뒷벽 왼쪽: 책장 ---- */
@@ -2269,20 +2269,34 @@ function init3D(){
     knob.position.set(-0.045,-0.005,0.86); door.add(knob);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.34,0.12), new THREE.MeshBasicMaterial({color:0x39424d}));
     sign.rotation.y = -Math.PI/2; sign.position.set(6.9,2.28,1.8); scene.add(sign);
+    // 문 왼쪽(z<1.24) 벽면 "팀장실" 표지판 — 캔버스 텍스처(어두운 배경+밝은 글자)
+    {
+      const sc = document.createElement('canvas'); sc.width = 256; sc.height = 112;
+      const sx = sc.getContext('2d');
+      sx.fillStyle = '#2b333c'; sx.fillRect(0,0,256,112);
+      sx.strokeStyle = '#8f9aa6'; sx.lineWidth = 4; sx.strokeRect(6,6,244,100);
+      sx.fillStyle = '#f4f1e8'; sx.font = 'bold 62px sans-serif';
+      sx.textAlign = 'center'; sx.textBaseline = 'middle';
+      sx.fillText('팀장실', 128, 60);
+      const stex = new THREE.CanvasTexture(sc); stex.anisotropy = 4;
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.22),
+        new THREE.MeshBasicMaterial({map:stex}));
+      plate.rotation.y = -Math.PI/2; plate.position.set(6.9,1.62,0.95); scene.add(plate);
+    }
   }
 
   /* ---- 창가 대형 화분 ---- */
   {
     const plantG = new THREE.Group();
     const bigPot = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.15,0.4,24), std({color:0x8d8d86, roughness:0.7}));
-    bigPot.position.set(4.6,0.2,-3.35); bigPot.castShadow = true; plantG.add(bigPot);
+    bigPot.position.set(4.2,0.2,-2.5); bigPot.castShadow = true; plantG.add(bigPot);
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.03,0.75,10), std({color:0x6a4e33, roughness:0.9}));
-    trunk.position.set(4.6,0.75,-3.35); plantG.add(trunk);
+    trunk.position.set(4.2,0.75,-2.5); plantG.add(trunk);
     for(let i=0;i<32;i++){
       const lf = new THREE.Mesh(new THREE.SphereGeometry(0.052,10,8),
         std({color:[0x2d5a38,0x356540,0x27512f][i%3], roughness:0.9}));
       lf.scale.set(0.42,1.55,0.22);
-      lf.position.set(4.6+(Math.random()-0.5)*0.38, 1.02+Math.random()*0.55, -3.35+(Math.random()-0.5)*0.38);
+      lf.position.set(4.2+(Math.random()-0.5)*0.38, 1.02+Math.random()*0.55, -2.5+(Math.random()-0.5)*0.38);
       lf.rotation.set((Math.random()-0.5)*1.2, Math.random()*3, (Math.random()-0.5)*1.2);
       lf.castShadow = true;
       plantG.add(lf);
@@ -2498,12 +2512,12 @@ function addDeskMemo(){
 ===================================================== */
 const STATIONS = {
   desk:     {pos:{x:0.0,  z:1.00}, eyeY:1.28, yaw:0.00,  yawSpan:1.35, side:'R', path:'none'},
-  copier:   {pos:{x:3.4,  z:-1.4}, eyeY:1.42, yaw:-0.44, yawSpan:0.9,  side:'R'},
-  cabinet:  {pos:{x:4.8,  z:-2.2}, eyeY:1.42, yaw:-0.39, yawSpan:0.9,  side:'R'},
+  copier:   {pos:{x:2.7,  z:-2.1}, eyeY:1.42, yaw:-0.30, yawSpan:0.9,  side:'R'},
+  cabinet:  {pos:{x:5.5,  z:-2.6}, eyeY:1.42, yaw:-0.30, yawSpan:0.9,  side:'R'},
   shelf:    {pos:{x:-4.6, z:-2.3}, eyeY:1.42, yaw:0.32,  yawSpan:0.9,  side:'L'},
   island:   {pos:{x:-3.5, z:1.0 }, eyeY:1.34, yaw:-1.57, yawSpan:0.9,  side:'L'},
   door:     {pos:{x:5.9,  z:1.7 }, eyeY:1.42, yaw:-1.66, yawSpan:0.9,  side:'R'},
-  plant:    {pos:{x:4.6,  z:-1.9}, eyeY:1.42, yaw:0.00,  yawSpan:0.9,  side:'R'},
+  plant:    {pos:{x:4.2,  z:-1.7}, eyeY:1.42, yaw:0.00,  yawSpan:0.9,  side:'R'},
   pantry:   {pos:{x:-4.7, z:2.6 }, eyeY:1.42, yaw:0.55,  yawSpan:0.9,  side:'L'},
   meet:     {pos:{x:2.8,  z:2.5 }, eyeY:1.42, yaw:0.35,  yawSpan:0.9,  side:'R'},
   mailrack: {pos:{x:5.4,  z:3.0 }, eyeY:1.42, yaw:-0.9,  yawSpan:0.9,  side:'R'},
@@ -3078,7 +3092,7 @@ function seatFaceRotY(k){ const s=DESK_SEATS[k]; return Math.atan2(s.desk.x-s.po
 const PLAYER_SEATS = {
   jr:  { desk:{x:0,   z:0.4}, seat:{x:0,   z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.28, nameplate:null },
   mid: { desk:{x:0,   z:0.4}, seat:{x:0,   z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.28, nameplate:null },
-  mgr: { desk:{x:1.7, z:0.4}, seat:{x:1.7, z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.30, nameplate:{title:'팀 장'} },
+  mgr: { desk:{x:1.7, z:0.4}, seat:{x:1.7, z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.30, nameplate:null },
 };
 function playerSeat(){ return PLAYER_SEATS[(typeof G!=='undefined'&&G.rank)||'jr'] || PLAYER_SEATS.jr; }
 /* ── 직급별 로스터: 별실 점유자 직함 + 아일랜드 mentor 페르소나 라우팅 ── */
@@ -3186,10 +3200,10 @@ const MODELDEFS = [
   // 워크스테이션(책상+컴퓨터+의자+NPC 4세트)은 WORKSTATIONS 테이블 + loadWorkstation 으로 배치
   // (책상 상판 실측 위에 컴퓨터, 의자 좌면 실측 중심에 NPC — 파묻힘·따로놀기 방지)
   // 유틸리티 존
-  {file:'printer.glb',       pos:{x:4.1,  z:-2.9}, rotY:-0.35,          h:0.9,  shadow:true,  replaces:'copier'},
-  {file:'cabinet_shelf.glb', pos:{x:5.4,  z:-3.65},rotY:Math.PI,        h:1.56, shadow:true,  replaces:'cab'},
+  {file:'printer.glb',       pos:{x:2.7,  z:-3.2}, rotY:-0.35,          h:0.9,  shadow:true,  replaces:'copier'},
+  {file:'cabinet_shelf.glb', pos:{x:5.5,  z:-3.78},rotY:Math.PI,        h:1.56, shadow:true,  replaces:'cab'},
   {file:'cabinet_shelf.glb', pos:{x:-5.1, z:-3.8}, rotY:0,              h:1.6,  shadow:true,  replaces:'shelf'},
-  {file:'plant.glb',         pos:{x:4.6,  z:-3.35},rotY:0,              h:0.98, shadow:true,  replaces:'plant'},
+  {file:'plant.glb',         pos:{x:4.2,  z:-2.5}, rotY:0,              h:0.98, shadow:true,  replaces:'plant'},
   // 앞쪽 클러스터
   {file:'pantry.glb',        pos:{x:-5.6, z:3.2},  rotY:0.2,            w:1.07, shadow:true,  replaces:'pantry'},
   {file:'meeting_table.glb', pos:{x:3.6,  z:3.2},  rotY:0,              w:1.48, shadow:true,  replaces:'meet'},
@@ -3385,11 +3399,8 @@ function buildBackOffice(){
   // 동벽 창(도시뷰): 사무실 winTex 재사용
   const bWin=new THREE.Mesh(new THREE.PlaneGeometry(2.4,1.5), new THREE.MeshBasicMaterial({map:winTex}));
   bWin.rotation.y=-Math.PI/2; bWin.position.set(15.18,1.9,1.5); scene.add(bWin);
-  // 명패(책상 위) — 절차 텍스트 캔버스
-  const plate=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.13),
-    new THREE.MeshBasicMaterial({map:makeTex(256,64,drawBossPlate)}));   // 직함(bossTitle)+성(bossSurname) 분기
-  plate.position.set(bcx-0.2,0.9,bcz-0.35); plate.rotation.y=-Math.PI/2; scene.add(plate);   // y 1.06→0.9: 축소 책상 상판에 맞춤
-  PROC.bossPlate = plate;                                                     // mgr 트랙 텍스트 교체용
+  // 명패(책상 위) 제거: 팀장실 문 '팀장실' 표지판으로 길찾기 대체 + 대화창에 이름 표시(정보 손실 없음).
+  // PROC.bossPlate 미생성 → updateBossPlate()는 `if(!PROC.bossPlate) return` 가드로 무해.
   // 응접 소파(절차) — 남벽 앞
   const sofa=new THREE.Group();
   const seat=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.35,0.7), std({color:0x4a5a6b,roughness:0.85}));
