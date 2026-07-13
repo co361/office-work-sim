@@ -3226,10 +3226,13 @@ const WORKSTATIONS = [
 // 튜닝 상수(스크린샷 실측): 컴퓨터를 좌석(전방)으로 당기는 깊이, sit_idle 힙이 좌면중심에서 전방으로 치우친 보정
 const COMP_DEPTH_FWD = 0.10;   // +면 좌석 쪽(모니터가 책상 뒤 모서리/벽에 파묻히지 않게 안쪽으로)
 const SIT_HIP_FWD    = 0.12;   // +면 책상 쪽(의자 bbox중심 → 실제 착석 힙 위치 보정)
-/* 책상의 '실제 나무 상판' y — bbox.max.y 는 상판 위 잡geometry(액자·스탠드)로 부풀어(자연높이의 ~100%)
-   오브젝트가 45cm 뜬다. desk.glb 정점 히스토그램상 나무 상판면은 전체 높이의 72% 지점(그 위는 장식).
+/* 책상의 '실제 나무 상판' y — 램프 제거(desk.glb 재수술)로 bbox.max.y 가 0.90→0.36 으로 낮아져
+   상판면이 이제 bbox 꼭대기 근처다. gltf-transform 정점 히스토그램(5,414정점) 실측: 나무 상판면은
+   Y=0.2527(단일 최대밀도 밴드 926정점, 전 X/Z 폭을 덮는 최대 수평평면)로 bbox 높이의 91.3% 지점.
+   그 위엔 잔여 소품 21~52정점(연필 등)만 소량 존재. 예전 0.62(옛 bbox의 ~72%)는 새 bbox에선
+   상판보다 37cm 아래를 가리켜 컴퓨터·서류가 상판 속으로 가라앉았다 → 91.3%로 재보정.
    레이캐스트는 AI메시의 뒤집힌 법선 때문에 불안정 → 동일 모델이라 비율이 가장 일관적. */
-const DESK_SURFACE_RATIO = 0.62;
+const DESK_SURFACE_RATIO = 0.913;
 function deskSurfaceY(deskObj){
   const bb = new THREE.Box3().setFromObject(deskObj);
   return bb.min.y + DESK_SURFACE_RATIO*(bb.max.y - bb.min.y);
