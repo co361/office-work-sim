@@ -1538,17 +1538,27 @@ const ROOM = {x0:-7.4, x1:6.6, z0:-4.6, z1:5.6}; // 걷기 가능한 방 경계(
 /* 다중 walkable 사각형(합집합). 인접 사각형은 문틈에서 겹쳐 연속 통행(사무실↔복도↔팀장실). */
 const WALK_ZONES = [
   {x0:-7.4, x1:6.6,  z0:-4.6, z1:5.6},   // 사무실(방 확대: 좌 -6.6→-7.4 / 뒤 -3.6→-4.6, 우측·앞은 유지)
-  {x0:6.2,  x1:10.7, z0:1.25, z1:2.35},  // 복도: 사무실 우측(6.6)과 [6.2,6.6] 겹침 → 문틈 연결
-  {x0:10.4, x1:15.0, z0:-1.0, z1:4.0},   // 팀장실: 복도(10.7)와 [10.4,10.7] 겹침 → 입구 연결
+  {x0:5.8,  x1:11.2, z0:1.25, z1:2.35},  // 복도: 사무실 문틈·팀장실 입구 겹침을 PLAYER_R 수축 후에도 유지하도록 x 범위를 양쪽으로 확장(5.8~11.2, z 는 문 개구부 안)
+  {x0:10.4, x1:15.0, z0:-1.0, z1:4.0},   // 팀장실: 복도(11.2)와 겹쳐 입구 연결(수축 후 overlap≈0.24)
 ];
+// 벽(존 경계)까지 플레이어 반지름만큼 안쪽에서 멈추게 판정 — 아바타가 벽을 파고들지 않음.
+// 존 간 겹침(문틈·복도·팀장실)은 WALK_ZONES 에서 미리 넓혀 통행 폭을 확보.
 function inWalkable(x, z){
-  for(const w of WALK_ZONES){ if(x>=w.x0 && x<=w.x1 && z>=w.z0 && z<=w.z1) return true; }
+  const R = PLAYER_R;
+  for(const w of WALK_ZONES){ if(x>=w.x0+R && x<=w.x1-R && z>=w.z0+R && z<=w.z1-R) return true; }
   return false;
+}
+// 3인칭 카메라를 플레이어가 속한 존 안으로 클램프(벽 뒤로 나가 백페이스가 비치는 현상 방지)
+function camClampZone(px, pz){
+  const M = 0.3;   // 벽 앞 여유(존 경계에서 안쪽으로)
+  for(const w of WALK_ZONES){ if(px>=w.x0 && px<=w.x1 && pz>=w.z0 && pz<=w.z1)
+    return {x0:w.x0+M, x1:w.x1-M, z0:w.z0+M, z1:w.z1-M}; }
+  return null;
 }
 /* 가구 충돌 AABB(코드의 실제 생성 좌표에서 추출, x0<x1·z0<z1) — 원-사각 슬라이드 충돌 */
 const COLLIDERS = [   // 가구 footprint 에 밀착(스테이션 접근점이 반지름 확장 후에도 도달 가능하도록 여유 확보)
   // ── 팀 아일랜드(좌측-중앙 2×2) 책상 footprint ──
-  {x0:-0.75, x1:0.75,  z0:0.0,  z1:0.68},   // 플레이어(신입) 책상 @(0,0.4)  앞줄
+  {x0:-0.75, x1:0.75,  z0:0.0,  z1:0.68, tag:'playerDesk'},   // 플레이어 책상 @(0,0.4) 앞줄 — mgr 헤드석 이동 시 applyPlayerSeat가 x0/x1 갱신
   {x0:-3.15, x1:-1.65, z0:0.0,  z1:0.68},   // 김대리(male) 책상 @(-2.4,0.4)  앞줄
   {x0:-0.75, x1:0.75,  z0:-1.5, z1:-0.72},  // 박선임(mentor) 책상 @(0,-1.1)  뒷줄(플레이어 마주봄)
   {x0:-3.15, x1:-1.65, z0:-1.5, z1:-0.72},  // 이주임(female) 책상 @(-2.4,-1.1) 뒷줄
@@ -1942,8 +1952,8 @@ function init3D(){
     panel.position.set(lx,3.09,lz); scene.add(panel); gPanels.push(panel);
   }
 
-  const wmat = std({map:wallTex(), roughness:0.94});
-  const accentMat = std({map:accentWallTex(), roughness:0.94});   // 뒷벽: 파스텔 민트 액센트
+  const wmat = std({map:wallTex(), roughness:0.94, side:THREE.DoubleSide});   // 양면화: 카메라가 벽 뒤로 새도 백페이스가 뚫려 보이지 않음
+  const accentMat = std({map:accentWallTex(), roughness:0.94, side:THREE.DoubleSide});   // 뒷벽: 파스텔 민트 액센트
   const backWall = new THREE.Mesh(new THREE.PlaneGeometry(15,3.1), accentMat);
   backWall.position.set(-0.5,1.55,-5); backWall.receiveShadow=true; scene.add(backWall);   // 방 확대: 뒷벽 z -4→-5(깊이 확장), 폭 14→15
   const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(12,3.1), wmat);
@@ -2511,12 +2521,12 @@ function stationPath(fromKey, toKey){
 function setHint(text){ const b=$('hintBar'); if(b){ b.textContent=text; b.style.display='block'; } }
 function hintDefault(){ const b=$('hintBar'); if(!b) return;
   b.textContent = standing
-    ? '🚶 W A S D 로 이동 · 동료 클릭 또는 근처에서 T 로 대화 · 자리 복귀는 책상(모니터) 클릭 또는 E'
+    ? '🚶 W A S D 로 이동 · 동료 근처에서 T 로 대화 · 자리 복귀는 책상(모니터) 클릭 또는 E'
     : '마우스 드래그로 둘러보기 · 모니터/서류/전화메모를 클릭해 확인하세요';
 }
 /* ---- 자유 이동 유틸: 입력 대상 판별·바닥 raycast·충돌 슬라이드·기립/착석 ---- */
 function isTypingTarget(el){ return !!el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable); }
-function nearDesk(){ return Math.hypot(camPos.x-0, camPos.z-1.0) < 1.4; }   // 내 책상(착석 위치) 반경
+function nearDesk(){ return Math.hypot(camPos.x-STATIONS.desk.pos.x, camPos.z-STATIONS.desk.pos.z) < 1.4; }   // 내 책상(착석 위치, 직급별) 반경
 function pickFloor(e){
   if(!gFloor) return null;
   mouse.x = (e.clientX/innerWidth)*2-1; mouse.y = -(e.clientY/innerHeight)*2+1;
@@ -2544,8 +2554,8 @@ function standUp(){
 }
 function seatAtDesk(){                          // 착석 상태·시선 클램프 원복(자리 복귀 완료 시)
   standing = false; curStation = 'desk';
-  camPos.x = 0; camPos.z = 1.0; camEyeY = EYE_SIT; targetEyeY = EYE_SIT;
-  yaw = 0; pitch = -0.30;
+  camPos.x = STATIONS.desk.pos.x; camPos.z = STATIONS.desk.pos.z; camEyeY = EYE_SIT; targetEyeY = EYE_SIT;
+  yaw = STATIONS.desk.yaw; pitch = -0.30;
   yawMin = -1.35; yawMax = 1.35; pitchMin = -0.9; pitchMax = 0.4;   // 데스크 클램프 복원
   moveTarget = null; seatReturn = null;
   freeMove.f=freeMove.b=freeMove.l=freeMove.r=0;
@@ -2564,7 +2574,7 @@ function setFloorTarget(x, z){                  // 클램프 제거: 매 스텝 
 function maybeFirstMoveToast(){                 // 처음 일어설 때 한 번만 조작 안내
   if(G._moveToastShown) return;
   G._moveToastShown = true;
-  toast('🚶 이동', 'W A S D 로 움직이세요 · 동료 근처에서 T 또는 클릭으로 대화 · 자리 복귀는 책상(모니터) 클릭 또는 E', 't-quest');
+  toast('🚶 이동', 'W A S D 로 움직이세요 · 동료 근처에서 T 로 대화 · 자리 복귀는 책상(모니터) 클릭 또는 E', 't-quest');
 }
 function updateFreeMove(){                      // 기립 상태 매 프레임: WASD 또는 바닥 클릭 목적지로 이동
   const now = performance.now(); let dt = (now-_moveLast)/1000; _moveLast = now;
@@ -2596,20 +2606,25 @@ function updateSeatReturn(){                     // 자리 복귀 보간(충돌 
   const now = performance.now(); let dt = (now-_seatLast)/1000; _seatLast = now;
   if(dt > 0.05) dt = 0.05;
   targetEyeY = EYE_SIT;
-  const dx = 0-camPos.x, dz = 1.0-camPos.z, d = Math.hypot(dx, dz);
+  const dx = STATIONS.desk.pos.x-camPos.x, dz = STATIONS.desk.pos.z-camPos.z, d = Math.hypot(dx, dz);
   if(d < 0.06){ const cb = seatReturn.onSeated; seatAtDesk(); if(cb) cb(); return; }
   const spd = Math.min(d, Math.max(1.8, d*3)*dt);
   camPos.x += dx/d*spd; camPos.z += dz/d*spd;
-  yaw += (0-yaw)*0.12;
+  yaw += (STATIONS.desk.yaw-yaw)*0.12;
 }
 function checkQuestProximity(){                  // 걸어서 스테이션 반경(≤1.0m) 진입 → 자동 도착
   if(G.questActive || walk_locked || !G.quests) return;
+  // 반경 1.0m 안의 오퍼된 스테이션 중 '가장 가까운' 것을 도착 처리(배열 순서가 아니라 최소 거리 우선)
+  // → 복합기·화분처럼 인접한 두 스테이션이 동시에 오퍼돼도 실제로 서 있는 쪽이 트리거된다.
+  let best=null, bestD=1.0;
   for(const qid in G.quests){
     const q = G.quests[qid]; if(!q || q.state!=='offered') continue;
     const d = QUESTDEFS[qid]; if(d.npcQuest) continue;      // 방문객 퀘스트는 클릭 응대
     const S = STATIONS[d.station]; if(!S) continue;
-    if(Math.hypot(camPos.x-S.pos.x, camPos.z-S.pos.z) < 1.0){ arriveQuestOnFoot(qid); return; }
+    const dist = Math.hypot(camPos.x-S.pos.x, camPos.z-S.pos.z);
+    if(dist < bestD){ bestD = dist; best = qid; }
   }
+  if(best) arriveQuestOnFoot(best);
 }
 function arriveQuestOnFoot(qid){                 // 마커 클릭 없이 걸어서 도착 → 프롬프트
   const q = (G.quests||{})[qid]; if(!q || q.state!=='offered' || G.questActive) return;
@@ -2636,7 +2651,9 @@ function startWalk(toKey, onArrive){
           targYaw:STATIONS[toKey].yaw, targEyeY:STATIONS[toKey].eyeY, onArrive};
   _walkLast = performance.now();
   walkLock(true);
-  setHint('🚶 이동 중…');
+  setHint(toKey==='boss'
+    ? (G.rank==='mgr' ? '🚶 오부장(임원)에게 상신하러 가는 중…' : '🚶 팀장에게 보고하러 가는 중…')
+    : '🚶 이동 중…');
 }
 function updateWalk(){
   const dtn = Math.min(0.05, (performance.now()-_walkLast)/1000); _walkLast=performance.now();
@@ -3010,7 +3027,7 @@ function tryTalkNearest(){
     if(d < bestD){ bestD = d; best = key; }
   }
   if(best) startTalk(best);
-  else toast('💬 대화', '동료 자리로 다가가(2.8m 이내) T 키를 누르거나, 동료를 직접 클릭하세요.', 't-quest');
+  else toast('💬 대화', '동료 자리로 다가가(2.8m 이내) T 키를 누르세요.', 't-quest');
 }
 /* 게임 시작/종료 시 대화 상태를 즉시 원상 복구(좌석 방향으로) */
 function resetTalkRigs(){
@@ -3030,7 +3047,7 @@ function startTalk(key){
   G.talkActive = key;
   moveTarget = null; freeMove.f=freeMove.b=freeMove.l=freeMove.r=0;   // 진행 중이던 플레이어 이동 정지
   openTalkUI(key);                                                    // 대화 UI(게임 시계 정지) — NPC 는 제자리 회전만
-  if(key==='manager') applyBossTalkCam();                             // 김팀장: 모니터에 얼굴 가림 → 전용 카메라
+  if(key==='manager') applyBossTalkCam(); else applySeatTalkCam(key); // 대화 시 얼굴 프레이밍 카메라(팀장=전용 튜닝값, 그 외 동료=좌석 기준 일반식)
   setHint('💬 '+(s.name||'동료')+'님과 대화 중 · Enter 전송 · [✕ 대화 끝내기]로 종료');
 }
 
@@ -3054,6 +3071,23 @@ const DESK_SEATS = {
   manager:{ name:'김팀장', pos:{x:13.9, z:1.6 },  desk:{x:13.2, z:1.6},  persona:'manager',  stand:'talk_open', yawFix:SIT_YAWFIX },  // 팀장실
 };
 function seatFaceRotY(k){ const s=DESK_SEATS[k]; return Math.atan2(s.desk.x-s.pos.x, s.desk.z-s.pos.z) + (s.yawFix||0); }  // 의자→책상 정면(+착석 클립 힙 보정)
+
+/* ── 직급별 플레이어 착석/헤드석 (안 b2: 시선 -z·deskRot 0 유지, 위치만 평행 이동) ──
+   desk: 책상 원점 / seat: 착석 카메라 발위치 / yaw·pitch: 착석 시선 / eyeY: 스테이션 눈높이(참고) / nameplate: 책상 명패.
+   jr/mid 는 현재 하드코딩값과 바이트 동일(회귀 0). mgr 만 아일랜드 헤드(우측)로 이동 + 명패. */
+const PLAYER_SEATS = {
+  jr:  { desk:{x:0,   z:0.4}, seat:{x:0,   z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.28, nameplate:null },
+  mid: { desk:{x:0,   z:0.4}, seat:{x:0,   z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.28, nameplate:null },
+  mgr: { desk:{x:1.7, z:0.4}, seat:{x:1.7, z:1.0}, yaw:0, pitch:-0.30, deskRot:0, eyeY:1.30, nameplate:{title:'팀 장'} },
+};
+function playerSeat(){ return PLAYER_SEATS[(typeof G!=='undefined'&&G.rank)||'jr'] || PLAYER_SEATS.jr; }
+/* ── 직급별 로스터: 별실 점유자 직함 + 아일랜드 mentor 페르소나 라우팅 ── */
+const ROSTER = {
+  jr:  { islandMentorPersona:'senior',   bossTitle:'팀 장', emptyFrontSlot:false },
+  mid: { islandMentorPersona:'senior',   bossTitle:'팀 장', emptyFrontSlot:false },
+  mgr: { islandMentorPersona:'coworker', bossTitle:'부 장', emptyFrontSlot:true  },
+};
+function rankRoster(){ return ROSTER[(typeof G!=='undefined'&&G.rank)||'jr'] || ROSTER.jr; }
 /* 공용 애니메이션 클립 세트(앉기·서기·걷기·대화) — 방문객 등 애니 NPC 전용(좌석 NPC는 정적 모델) */
 const SEAT_CLIPS = ['anim_shared_idle.glb','anim_shared_chat.glb','anim_shared_talk.glb','anim_shared_talkopen.glb',
   'anim_shared_sitidle.glb','anim_shared_step2sit.glb','anim_shared_sit2stand.glb','anim_shared_walkinplace.glb'];
@@ -3093,6 +3127,26 @@ function restoreBossTalkCam(){
   yaw = s.yaw; pitch = s.pitch;
   yawMin = s.yawMin; yawMax = s.yawMax; pitchMin = s.pitchMin; pitchMax = s.pitchMax;
 }
+/* 착석 동료(김대리·이주임·박선임 등) 대화 카메라 — 팀장(BOSS_TALK_CAM)처럼 얼굴을 프레이밍.
+   좌석(SEATED[key].seat) 기준 일반식: 플레이어 쪽으로 dist 만큼 물러난 지점에서 좌석 얼굴을 바라봄.
+   대화 시작 시 NPC 가 플레이어 쪽으로 살짝 회전(updateSeatedTalk)하므로 얼굴이 대화창 위에 잡힌다. */
+function applySeatTalkCam(key){
+  const s = SEATED[key], cfg = DESK_SEATS[key];
+  if(!s || !s.seat || !cfg || !cfg.desk) return;
+  _bossCamSave = { x:camPos.x, z:camPos.z, camEyeY, targetEyeY, yaw, pitch, yawMin, yawMax, pitchMin, pitchMax };
+  // 얼굴 정면(=책상 쪽) 방향 + 측면 오프셋 → 45° 프런트 3/4 뷰. 정면(축)만이면 모니터·긴 머리에 얼굴이 가려서
+  // 측면으로 벌려 얼굴이 대화창 위에 드러나게 한다(스샷 튜닝값). 좌석 좌표 기준 일반식 — 4명 공통.
+  let fx = cfg.desk.x - s.seat.x, fz = cfg.desk.z - s.seat.z;
+  const m = Math.hypot(fx, fz) || 1; fx/=m; fz/=m;
+  const px = -fz, pz = fx;                          // 얼굴 방향의 좌측 수직(측면 오프셋)
+  const FWD = 1.0, LAT = 0.85;                       // 앞(얼굴 쪽)·옆 거리
+  camPos.x = s.seat.x + fx*FWD + px*LAT;
+  camPos.z = s.seat.z + fz*FWD + pz*LAT;
+  camEyeY = 1.5; targetEyeY = 1.5;
+  yaw = Math.atan2(camPos.x - s.seat.x, camPos.z - s.seat.z);   // 좌석(얼굴)을 주시
+  pitch = -0.26;
+  yawMin = yaw-0.5; yawMax = yaw+0.5; pitchMin = -0.55; pitchMax = 0.15;   // 대화 중 드래그 클램프
+}
 function registerSeated(key, obj, baseRotY, seatCenter){
   const cfg = DESK_SEATS[key] || {};
   const seat = { x: seatCenter.x, z: seatCenter.z };
@@ -3106,8 +3160,8 @@ function registerSeated(key, obj, baseRotY, seatCenter){
   hit.position.set(seat.x, 0.6, seat.z);
   hit.castShadow = false; hit.frustumCulled = false;
   hit.userData.act='talk'; hit.userData.talkKey=key; hit.userData.label=label;
-  scene.add(hit); hoverables.push(hit); SEATED[key].hit = hit;
-  obj.userData.act='talk'; obj.userData.talkKey=key; obj.userData.label=label;
+  scene.add(hit); SEATED[key].hit = hit;   // 착석 동료는 클릭 대상에서 제외(hoverables 미등록) — 대화는 T 키(tryTalkNearest)만. 모니터·서류 클릭이 NPC에 가로채이지 않음
+  // obj.userData.act 미설정: 좌석 모델도 클릭 무반응(대화는 근접 T 키 전용). label/talkKey 는 hit 에만 보존.
 }
 /* 렌더 프레임마다: 대화 상대는 플레이어 쪽으로 살짝 회전(클램프), 그 외는 baseRotY 로 복귀. */
 function updateSeatedTalk(){
@@ -3195,45 +3249,107 @@ function loadWorkstation(ws){
 const PLAYER_DESK = {x:0, z:0.4, top:1.0};                                 // 앞줄 팀 아일랜드(male/manager 와 같은 z=0.4). top 은 GLB 상판 실측으로 갱신
 function repositionPlayerDesktop(topY){
   PLAYER_DESK.top = topY;
-  if(paperStack) paperStack.position.set(-0.52, topY+0.004, 0.56);         // 인수인계서(doc)  (책상 z=0.4 기준 +0.16)
-  if(phoneBody){ phoneBody.position.set(0.52, topY+0.028, 0.42); }         // 전화기(phone)
-  if(memoGroup)  memoGroup.position.set(0.30, topY+0.005, 0.66);           // 도착 전화메모
-  if(PROC.monLight) PROC.monLight.position.set(0, topY+0.32, 0.46);        // 화면 조명
+  const dx=PLAYER_DESK.x, dz=PLAYER_DESK.z;                                 // 책상 원점(직급별) 상대 오프셋
+  if(paperStack) paperStack.position.set(dx-0.52, topY+0.004, dz+0.16);     // 인수인계서(doc)  (책상 z 기준 +0.16)
+  if(phoneBody){ phoneBody.position.set(dx+0.52, topY+0.028, dz+0.02); }    // 전화기(phone)
+  if(memoGroup)  memoGroup.position.set(dx+0.30, topY+0.005, dz+0.26);      // 도착 전화메모
+  if(PROC.monLight) PROC.monLight.position.set(dx, topY+0.32, dz+0.06);     // 화면 조명
 }
 function loadPlayerWorkstation(){
   loadGLB('desk.glb').then(desk=>{
-    placeModel(desk, {file:'desk.glb', pos:PLAYER_DESK, rotY:0, w:1.15, shadow:true});
+    placeModel(desk, {file:'desk.glb', pos:{x:PLAYER_DESK.x, z:PLAYER_DESK.z}, rotY:playerSeat().deskRot, w:1.15, shadow:true});
     desk.userData.wsKey='player'; desk.userData.wsPart='desk';
+    PROC.playerDeskGLB = desk;                                                // 직급별 재배치용 참조
     if(PROC.playerDesk){ removeObj(PROC.playerDesk); PROC.playerDesk=null; }  // 회색 절차 가구 통째 제거
     const topY = deskSurfaceY(desk);                                         // 실제 나무 상판(정점 비율)
     repositionPlayerDesktop(topY);
     loadGLB('computer.glb').then(comp=>{
-      placeModel(comp, {file:'computer.glb', pos:{x:0, z:0.34}, rotY:0, w:0.45, y0:topY+0.005, shadow:false});
+      placeModel(comp, {file:'computer.glb', pos:{x:PLAYER_DESK.x, z:PLAYER_DESK.z-0.06}, rotY:playerSeat().deskRot, w:0.45, y0:topY+0.005, shadow:false});
       comp.userData.wsKey='player'; comp.userData.wsPart='computer';
+      PROC.playerCompGLB = comp;                                             // 직급별 재배치용 참조
       // 라이브 WORKS 화면(monitorScreen)을 GLB 모니터 화면면 위에 재배치 — 클릭=PC 열기 유지
       if(monitorScreen){
         monitorScreen.geometry.dispose();
         monitorScreen.geometry = new THREE.PlaneGeometry(PLAYER_SCREEN.w, PLAYER_SCREEN.h);
-        monitorScreen.position.set(PLAYER_SCREEN.x, topY+PLAYER_SCREEN.dy, PLAYER_SCREEN.z);
+        monitorScreen.position.set(PLAYER_DESK.x+PLAYER_SCREEN.x, topY+PLAYER_SCREEN.dy, PLAYER_DESK.z-0.02);
         monitorScreen.rotation.set(0,0,0);
       }
     }).catch(()=>{});
   }).catch(()=>{ /* GLB 실패: 회색 절차 책상 폴백 유지 */ });
   loadGLB('chair.glb').then(chair=>{
-    placeModel(chair, {file:'chair.glb', pos:{x:0, z:0.94}, rotY:Math.PI, h:0.78, shadow:true});  // 등받이가 방 쪽(플레이어 뒤)을 향하도록 180° — 축소 책상(z=0.4)을 마주보는 착석 위치(z≈0.9)
+    placeModel(chair, {file:'chair.glb', pos:{x:PLAYER_DESK.x, z:PLAYER_DESK.z+0.54}, rotY:Math.PI, h:0.78, shadow:true});  // 등받이가 방 쪽(플레이어 뒤)을 향하도록 180° — 책상(z 기준 +0.54)을 마주보는 착석 위치
     chair.userData.wsKey='player'; chair.userData.wsPart='chair';
+    PROC.playerChairGLB = chair;                                            // 직급별 재배치용 참조
   }).catch(()=>{});
 }
-const PLAYER_SCREEN = {w:0.246, h:0.152, x:0, z:0.38, dy:0.25};            // 핑크 GLB 모니터 화면면(월드좌표)에 얹히는 크기·위치 — 0.82배 축소 모니터에 맞춤(상판 기준 dy)
+const PLAYER_SCREEN = {w:0.246, h:0.152, x:0, z:0.38, dy:0.25};            // 핑크 GLB 모니터 화면면(월드좌표)에 얹히는 크기·위치 — 0.82배 축소 모니터에 맞춤(상판 기준 dy). x=책상원점 상대, z 미사용(원점상대 -0.02 직접 계산)
+
+/* ── 플레이어 헤드석 명패(mgr 전용) — 별실 명패 로직 복제. jr/mid 는 nameplate=null → 미표시 ── */
+let _playerPlate = null;
+function updatePlayerPlate(){
+  if(_playerPlate){ scene.remove(_playerPlate); if(_playerPlate.material&&_playerPlate.material.map) _playerPlate.material.map.dispose(); _playerPlate=null; }
+  const np = playerSeat().nameplate; if(!np) return;
+  const title = np.title, nm = (typeof G!=='undefined'&&G.player&&G.player.name) || '';
+  const top = (PLAYER_DESK.top!=null?PLAYER_DESK.top:1.0);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.13),
+    new THREE.MeshBasicMaterial({map:makeTex(256,64,(x,w,h)=>{x.fillStyle='#2b2f36';x.fillRect(0,0,w,h);
+      x.fillStyle='#e8c96a';x.font='bold 30px sans-serif';x.textAlign='center';x.textBaseline='middle';
+      x.fillText(title+'  '+nm, w/2, h/2);})}));
+  plate.position.set(PLAYER_DESK.x, top+0.07, PLAYER_DESK.z+0.30); plate.rotation.y=0;   // 상판 앞모서리, 통로(+z) 향함
+  scene.add(plate); _playerPlate = plate;
+}
+/* ── 직급별 플레이어 착석 재적용(R1: init3D가 rank 확정 전 1회 로드 → startGame에서 갱신) ──
+   jr/mid(desk 미이동)는 STATIONS.desk 동일값 재세팅뿐 → 회귀 0. mgr만 이미 배치된 오브젝트를 델타 이동. */
+function applyPlayerSeat(){
+  const s = playerSeat();
+  const dx = s.desk.x - PLAYER_DESK.x, dz = s.desk.z - PLAYER_DESK.z;
+  PLAYER_DESK.x = s.desk.x; PLAYER_DESK.z = s.desk.z;
+  STATIONS.desk.pos.x = s.seat.x; STATIONS.desk.pos.z = s.seat.z; STATIONS.desk.yaw = s.yaw; STATIONS.desk.eyeY = s.eyeY;
+  if(dx || dz){                                  // 좌석 이동(mgr 헤드석)일 때만 이미 배치된 오브젝트 재배치
+    [PROC.playerDeskGLB, PROC.playerCompGLB, PROC.playerChairGLB].forEach(o=>{ if(o){ o.position.x+=dx; o.position.z+=dz; } });
+    if(PLAYER_DESK.top!=null){
+      repositionPlayerDesktop(PLAYER_DESK.top);
+      if(monitorScreen) monitorScreen.position.set(PLAYER_DESK.x+PLAYER_SCREEN.x, PLAYER_DESK.top+PLAYER_SCREEN.dy, PLAYER_DESK.z-0.02);
+    }
+    const col = COLLIDERS.find(c=>c.tag==='playerDesk');
+    if(col){ col.x0 = PLAYER_DESK.x-0.75; col.x1 = PLAYER_DESK.x+0.75; }
+  }
+  updatePlayerPlate();
+}
 
 /* ── 팀장 이름 헬퍼(B-4): mgr 트랙(플레이어=팀장)이면 팀장실 점유자는 오부장 ── */
 function bossName(){ return (typeof G!=='undefined' && G.rank==='mgr') ? '오부장' : '김팀장'; }
 function bossSurname(){ return (typeof G!=='undefined' && G.rank==='mgr') ? '오부장' : '김OO'; }
+function bossTitle(){ return rankRoster().bossTitle; }                       // jr/mid='팀 장', mgr='부 장'
+/* 별실 명패 캔버스 드로잉(직함+성) — buildBackOffice·updateBossPlate 공용 */
+function drawBossPlate(x,w,h){ x.fillStyle='#2b2f36'; x.fillRect(0,0,w,h);
+  x.fillStyle='#e8c96a'; x.font='bold 34px sans-serif'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillText(bossTitle()+'  '+bossSurname(), w/2, h/2); }
+function updateBossPlate(){ if(!PROC.bossPlate) return;                      // rank 확정 후 명패 텍스처 갱신
+  const m=PROC.bossPlate.material; if(m.map) m.map.dispose();
+  m.map = makeTex(256,64,drawBossPlate); m.needsUpdate=true; }
+/* ── 직급 확정(startGame) 후 공간 정합 1회 적용 (R1: init3D는 rank 확정 전 로드) ──
+   - 플레이어 착석/헤드석 재배치 + 헤드석 명패
+   - 별실 명패 직함·점유자 이름/대화 라벨 갱신(init 시 rank 미확정→김팀장 고정분 교정)
+   - 아일랜드 mentor 페르소나(mgr=팀원 톤). jr/mid 는 전부 현재값과 동일 → 회귀 0. */
+function applyRankLayout(){
+  applyPlayerSeat();
+  updateBossPlate();
+  const bn = bossName();
+  if(typeof SEATED!=='undefined' && SEATED.manager){
+    SEATED.manager.name = bn;
+    const lb = bn+'에게 말 걸기';
+    if(SEATED.manager.hit) SEATED.manager.hit.userData.label = lb;
+    if(SEATED.manager.obj) SEATED.manager.obj.userData.label = lb;
+  }
+  if(DESK_SEATS.manager) DESK_SEATS.manager.name = bn;
+  if(DESK_SEATS.mentor)  DESK_SEATS.mentor.persona = rankRoster().islandMentorPersona;   // mgr: 박선임=팀원(coworker) 톤
+}
 
 /* ── 복도·팀장실 셸 절차 생성(A-5): 문 밖 복도 → 서쪽 개구부 팀장실 ── */
 function buildBackOffice(){
   const std=(o)=>new THREE.MeshStandardMaterial(o);
-  const wmat  = std({map:wallTex(),  roughness:0.94});
+  const wmat  = std({map:wallTex(),  roughness:0.94, side:THREE.DoubleSide});   // 양면화(복도·팀장실 벽): 카메라 관통 시 백페이스 노출 방지
   const fmatC = std({map:carpetTex(),roughness:0.97});                 // 복도 바닥(사무실과 동일 마루)
   const fmatB = std({color:0x6f5540, roughness:0.7});                  // 팀장실 바닥: 짙은 원목(격상감)
   const cmat  = std({map:ceilTex(),  roughness:0.95});
@@ -3271,9 +3387,7 @@ function buildBackOffice(){
   bWin.rotation.y=-Math.PI/2; bWin.position.set(15.18,1.9,1.5); scene.add(bWin);
   // 명패(책상 위) — 절차 텍스트 캔버스
   const plate=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.13),
-    new THREE.MeshBasicMaterial({map:makeTex(256,64,(x,w,h)=>{x.fillStyle='#2b2f36';x.fillRect(0,0,w,h);
-      x.fillStyle='#e8c96a';x.font='bold 34px sans-serif';x.textAlign='center';x.textBaseline='middle';
-      x.fillText('팀 장  '+bossSurname(), w/2, h/2);})}));
+    new THREE.MeshBasicMaterial({map:makeTex(256,64,drawBossPlate)}));   // 직함(bossTitle)+성(bossSurname) 분기
   plate.position.set(bcx-0.2,0.9,bcz-0.35); plate.rotation.y=-Math.PI/2; scene.add(plate);   // y 1.06→0.9: 축소 책상 상판에 맞춤
   PROC.bossPlate = plate;                                                     // mgr 트랙 텍스트 교체용
   // 응접 소파(절차) — 남벽 앞
@@ -3355,7 +3469,9 @@ function animate(){
   if(_tp){
     updatePlayerAvatar();
     // 아바타 뒤+위 궤도 카메라(yaw로 회전, 항상 등 뒤). 지연 트레일링으로 부드럽게.
-    const tx = camPos.x + Math.sin(yaw)*TP_BACK, tz = camPos.z + Math.cos(yaw)*TP_BACK;
+    let tx = camPos.x + Math.sin(yaw)*TP_BACK, tz = camPos.z + Math.cos(yaw)*TP_BACK;
+    const _zc = camClampZone(camPos.x, camPos.z);           // 벽 뚫음 방지: 카메라를 현재 존(방) 경계 안으로 당김
+    if(_zc){ tx = Math.max(_zc.x0, Math.min(_zc.x1, tx)); tz = Math.max(_zc.z0, Math.min(_zc.z1, tz)); }
     if(!_tpCam) _tpCam = new THREE.Vector3(tx, TP_UP, tz);   // 재진입 시 등 뒤로 스냅(방 가로지르는 스woop 방지)
     _tpCam.x += (tx-_tpCam.x)*0.18; _tpCam.y += (TP_UP-_tpCam.y)*0.18; _tpCam.z += (tz-_tpCam.z)*0.18;
     camera.position.set(_tpCam.x, _tpCam.y, _tpCam.z);
@@ -4099,8 +4215,9 @@ async function startGame(){
   G.quests = {}; G.markers = {}; G.questActive = null; G.questDone = 0; G.npcs = G.npcs || []; G.visitor = null;
   standing=false; walk=null; walk_locked=false; seatReturn=null; moveTarget=null; G._moveToastShown=false;
   G.talkActive=null; G.talkKey=null; G._talkBusy=false; resetTalkRigs();   // 진행 중 대화 강제 정리
+  applyRankLayout();   // R1: rank 확정 후 착석/헤드석·별실 명패·mentor 페르소나 정합(jr/mid=현재값 동일)
   freeMove.f=freeMove.b=freeMove.l=freeMove.r=0; freeMove.run=false;
-  camPos.x=0; camPos.z=1.0; camEyeY=EYE_SIT; targetEyeY=EYE_SIT; curStation='desk';
+  camPos.x=STATIONS.desk.pos.x; camPos.z=STATIONS.desk.pos.z; camEyeY=EYE_SIT; targetEyeY=EYE_SIT; curStation='desk';
   yawMin=-1.35; yawMax=1.35; pitchMin=-0.9; pitchMax=0.4;   // 착석 기본 상태
   G.started = true; lastTick = performance.now();
   setSpeed(1);
@@ -4629,7 +4746,7 @@ async function sendTalk(){
 }
 function closeTalk(){
   $('ovTalk').classList.remove('open');
-  if(G.talkKey==='manager') restoreBossTalkCam();   // 김팀장 전용 카메라였을 때만 원위치 복구(사무실 동료 대화 영향 없음)
+  restoreBossTalkCam();   // 대화 카메라 원위치 복구(팀장·동료 공통; 저장값 없으면 무동작)
   G.talkKey = null; G._talkBusy = false;
   walkLock(false); G.talkActive = null;    // 대화 종료 → updateSeatedTalk 가 NPC 를 baseRotY(착석 방향)로 복귀
 }
