@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>오피스 첫 출근 — 신입사원 업무 시뮬레이션</title>
 <style>
   :root{
@@ -12,7 +12,7 @@
     --mono:'SF Mono','Consolas',monospace;
   }
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#0d1117;
+  html,body{width:100%;height:100%;overflow:hidden;background:#0d1117;touch-action:manipulation;
     font-family:'Apple SD Gothic Neo','Pretendard','Malgun Gothic','Noto Sans KR',sans-serif;color:var(--ink)}
   #c3d{position:fixed;inset:0;display:block;cursor:grab}
   #c3d.grabbing{cursor:grabbing}
@@ -526,6 +526,18 @@
   .dt-icon:hover .del{display:block}
 
 </style>
+<script>
+/* 페이지 핀치줌 차단 — 고정 레이아웃 유지(바탕화면 확대 시 알림센터·작업표시줄 잘림 방지).
+   창/파일/시트/3D 상호작용은 건드리지 않고 '페이지 줌'만 막는다. */
+(function(){
+  // 맥 트랙패드/브라우저 ctrl+wheel 핀치줌 차단 (트랙패드 핀치는 ctrlKey=true인 wheel로 들어옴)
+  window.addEventListener('wheel', function(e){ if(e.ctrlKey){ e.preventDefault(); } }, {passive:false});
+  // Safari 제스처 줌 차단
+  document.addEventListener('gesturestart',  function(e){ e.preventDefault(); });
+  document.addEventListener('gesturechange', function(e){ e.preventDefault(); });
+  document.addEventListener('gestureend',    function(e){ e.preventDefault(); });
+})();
+</script>
 </head>
 <body>
 <canvas id="c3d"></canvas>
