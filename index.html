@@ -3417,9 +3417,18 @@ function buildBackOffice(){
 
 /* ── 팀장실 김팀장 배치(B-3): seat_manager.glb → registerSeated('manager') 로 대화 라우팅 유지 ── */
 function loadBossOffice(){
-  // 중역 책상(desk.glb 확대)
+  // 중역 책상(desk.glb 확대) + 데스크톱 컴퓨터(loadWorkstation 미러: 상판 실측 위 안착)
   loadGLB('desk.glb').then(desk=>{
     placeModel(desk,{file:'desk.glb',pos:{x:13.2,z:1.6},rotY:-Math.PI/2,w:1.23,shadow:true});
+    desk.userData.wsKey='manager'; desk.userData.wsPart='desk';
+    // 부장은 +x측(chair x:13.9)에 앉아 -x를 바라봄. 책상 front(-x)는 방문객 쪽 → 컴퓨터는 부장 쪽(+x)으로
+    // COMP_DEPTH_FWD 만큼 당기고, 모니터 화면(모델 front +z)이 부장(+x)을 향하도록 rotY=+π/2.
+    const topY = deskSurfaceY(desk);                                        // 실제 나무 상판(정점 비율)
+    const cpos = {x: 13.2 + Math.sin(Math.PI/2)*COMP_DEPTH_FWD, z: 1.6 + Math.cos(Math.PI/2)*COMP_DEPTH_FWD};
+    loadGLB('computer.glb').then(comp=>{
+      placeModel(comp,{file:'computer.glb',pos:cpos,rotY:Math.PI/2,w:0.45,y0:topY+0.005,shadow:false});
+      comp.userData.wsKey='manager'; comp.userData.wsPart='computer';       // 장식(클릭/monitorScreen 미등록)
+    }).catch(()=>{});
   }).catch(()=>{});
   // 방문 의자 2 (책상 서쪽 앞)
   [ {x:12.25,z:1.15}, {x:12.25,z:2.05} ].forEach(p=>{
