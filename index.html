@@ -67,28 +67,57 @@
     background:rgba(8,12,20,.55);backdrop-filter:blur(3px)}
   .overlay.open{display:flex}
 
-  /* ---------- 시작 화면 ---------- */
-  #startScreen{position:fixed;inset:0;z-index:100;background:
-    radial-gradient(1200px 700px at 70% -10%, #2a3f68 0%, #141c2e 55%, #0b101c 100%);
-    color:#eef2fa;display:flex;align-items:center;justify-content:center;overflow:auto}
-  .start-inner{max-width:860px;width:92%;padding:48px 0}
-  .start-eyebrow{font-size:13px;letter-spacing:.35em;color:#7f96c4;font-weight:700;margin-bottom:10px}
-  .start-title{font-size:44px;font-weight:800;line-height:1.2;margin-bottom:14px}
-  .start-title em{font-style:normal;color:#8fb4ff}
-  .start-desc{font-size:15px;color:#aab8d4;line-height:1.75;margin-bottom:36px;max-width:620px}
-  .pick-label{font-size:13px;font-weight:700;color:#8fa3c9;margin:26px 0 10px;letter-spacing:.12em}
-  .pick-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
-  .pick-card{background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.14);border-radius:12px;
-    padding:16px;text-align:left;color:#e6ecf8;transition:all .15s}
-  .pick-card:hover{background:rgba(255,255,255,.1)}
-  .pick-card.sel{border-color:#8fb4ff;background:rgba(90,130,220,.22);box-shadow:0 0 0 1px #8fb4ff inset}
-  .pick-card h4{font-size:15.5px;margin-bottom:5px}
-  .pick-card p{font-size:12.5px;color:#9db0d2;line-height:1.55}
-  #btnStart{margin-top:38px;background:#4d7fe0;border:none;color:#fff;font-size:16px;font-weight:800;
-    padding:15px 42px;border-radius:12px;transition:background .15s}
-  #btnStart:disabled{background:#33415e;color:#7484a3;cursor:not-allowed}
-  #btnStart:not(:disabled):hover{background:#5f8ff0}
-  .start-note{margin-top:14px;font-size:12px;color:#7688a9}
+  /* ---------- 시작 화면 (WORK SIM. 목업 · 밝은 미니멀) ---------- */
+  #startScreen{position:fixed;inset:0;z-index:100;background:#eef0f3;color:#2f3b52;
+    display:flex;align-items:flex-start;justify-content:center;overflow:auto;
+    font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif}
+  .start-inner{max-width:440px;width:100%;padding:46px 22px 60px;box-sizing:border-box}
+  .ws-title{font-size:52px;font-weight:900;letter-spacing:-.02em;line-height:1.02;margin:4px 0 10px}
+  .ws-title .w1{color:#2f3b52} .ws-title .w2{color:#7b93b8}
+  .ws-sub{font-size:14.5px;color:#8a93a3;font-weight:600;margin-bottom:18px}
+  .ws-divider{height:1px;background:#dfe3ea;border:0;margin:0 0 24px}
+  .ws-card{background:#fff;border-radius:20px;padding:6px 22px;
+    box-shadow:0 12px 34px rgba(47,59,82,.09),0 2px 6px rgba(47,59,82,.05)}
+  .ws-row{display:flex;align-items:center;gap:12px;padding:16px 0;border-bottom:1px solid #eef0f3}
+  .ws-card > .ws-row:last-child,.ws-picksec:last-child .ws-row{border-bottom:0}
+  .ws-rowmain{flex:1;min-width:0}
+  .ws-label{font-size:15px;font-weight:800;color:#2f3b52;margin-bottom:5px}
+  .ws-input{width:100%;border:0;outline:0;background:transparent;font-family:inherit;
+    font-size:14.5px;color:#4a5670;padding:0}
+  .ws-input::placeholder{color:#aeb6c4}
+  .ws-chev{color:#b7bfcd;font-size:18px;font-weight:800;flex-shrink:0;line-height:1;transition:transform .2s}
+  .ws-picksec .ws-chev{cursor:pointer}
+  .ws-picksec.open .ws-chev{transform:rotate(180deg)}
+  .ws-pickval{font-size:14px;color:#8a93a3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ws-pickhead{cursor:pointer}
+  .pick-grid{display:none;grid-template-columns:1fr;gap:8px;padding:2px 0 16px}
+  .ws-picksec.open .pick-grid{display:grid}
+  .pick-card{background:#f6f7f9;border:1.5px solid #e6e9ef;border-radius:12px;width:100%;
+    padding:12px 14px;text-align:left;color:#2f3b52;transition:all .15s;cursor:pointer}
+  .pick-card:hover{background:#eef1f6}
+  .pick-card.sel{border-color:#7b93b8;background:#eaf0f9;box-shadow:0 0 0 1px #7b93b8 inset}
+  .pick-card h4{font-size:14.5px;margin-bottom:3px;font-weight:800}
+  .pick-card p{font-size:12px;color:#8a93a3;line-height:1.5}
+  #btnStart{margin-top:22px;width:100%;background:#fff;border:0;color:#2f3b52;font-size:17px;font-weight:800;
+    padding:17px;border-radius:16px;cursor:pointer;font-family:inherit;transition:all .15s;
+    box-shadow:0 10px 26px rgba(47,59,82,.12),0 2px 5px rgba(47,59,82,.06)}
+  #btnStart:disabled{color:#b7bfcd;box-shadow:0 4px 12px rgba(47,59,82,.05);cursor:not-allowed}
+  #btnStart:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(47,59,82,.16)}
+  .start-note{margin-top:16px;font-size:11.5px;color:#a2abba;line-height:1.7;text-align:center}
+  #pickWait{color:#8a93a3}
+  @media (prefers-color-scheme:dark){
+    #startScreen{background:#0f1522;color:#e8edf6}
+    .ws-title .w1{color:#d3dcec} .ws-title .w2{color:#7b93b8}
+    .ws-sub{color:#8695ad} .ws-divider{background:#242e40}
+    .ws-card{background:#161d2b;box-shadow:0 12px 34px rgba(0,0,0,.45)}
+    .ws-row{border-bottom-color:#212a3b}
+    .ws-label{color:#e8edf6} .ws-input{color:#c2cbdc} .ws-input::placeholder{color:#5f6a7d}
+    .pick-card{background:#1d2636;border-color:#2a3547;color:#dbe3f0}
+    .pick-card:hover{background:#232e42} .pick-card.sel{background:#243450;border-color:#7b93b8}
+    .pick-card p{color:#8695ad}
+    #btnStart{background:#222c3e;color:#e8edf6;box-shadow:0 10px 26px rgba(0,0,0,.4)}
+    #btnStart:disabled{color:#5f6a7d}
+  }
 
   /* ---------- 컴퓨터(그룹웨어) 오버레이 ---------- */
   #computer{width:min(1100px,95vw);height:min(700px,90vh);background:#0f1420;border-radius:14px;
@@ -300,7 +329,7 @@
     .gw-nav button{justify-content:center;padding:12px 4px;font-size:11px}
     .gw-nav .lbl{display:none}
     .gw-list{width:44%}
-    .start-title{font-size:30px}
+    .ws-title{font-size:42px}
   }
 
   /* ---------- 실무 작업 모달 ---------- */
@@ -530,34 +559,67 @@
 <!-- ===== 시작 화면 ===== -->
 <div id="startScreen">
   <div class="start-inner">
-    <div class="start-eyebrow">OFFICE WORK SIMULATION</div>
-    <div class="start-title">오피스 첫 출근<br><em>하루 동안, 전임자의 미결함을 비워라</em></div>
-    <p class="start-desc">
-      당신은 오늘 이 팀에 첫 출근했습니다(직급은 직접 선택). 책상 위에는 전임자가 남긴 인수인계서 한 부,
-      그리고 시간이 흐를수록 쌓이는 이메일·메신저·전화메모가 있습니다.
-      제한된 하루(09:00–18:00) 안에 우선순위를 정하고, 직접 답장을 쓰고, 위임하거나 보류하며
-      업무를 처리하세요. 이메일을 보낼 때마다 업무 피드백이 즉시 첨삭으로 돌아옵니다.<br>
-      <b>모든 업무를 다 처리하는 것이 목표가 아닙니다</b> — 실제 회사처럼 일은 시간보다 많습니다.
-      무엇을 먼저 하고, 무엇을 미루고, 무엇을 넘길지 판단하는 것이 평가의 핵심입니다.
-    </p>
-    <div class="pick-label">1 · 사원 정보 등록</div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <input id="pName" maxlength="10" placeholder="이름 입력 (예: 강승민)" style="background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;padding:13px 16px;font-size:15px;color:#eef2fa;outline:none;width:240px;font-family:inherit">
-      <input id="kKey" maxlength="24" placeholder="접속 키 (예: EDU-AB12-CD34)" style="background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.2);border-radius:10px;padding:13px 16px;font-size:14px;color:#eef2fa;outline:none;width:240px;font-family:var(--mono);display:none">
-      <span id="pIssued" style="font-size:12.5px;color:#8fa3c9;line-height:1.6">입사 처리 시 내선번호와 사내 이메일이 자동 발급됩니다.</span>
+    <div class="ws-title"><span class="w1">WORK</span> <span class="w2">SIM.</span></div>
+    <div class="ws-sub">회사 첫 출근! 업무 시뮬레이션</div>
+    <hr class="ws-divider">
+    <div class="ws-card">
+      <div class="ws-row">
+        <div class="ws-rowmain">
+          <div class="ws-label">소속.</div>
+          <input id="pSchool" class="ws-input" maxlength="30" placeholder="학교 / 회사 / 소속 (선택)">
+        </div>
+        <div class="ws-chev">⌄</div>
+      </div>
+      <div class="ws-row">
+        <div class="ws-rowmain">
+          <div class="ws-label">전화번호.</div>
+          <input id="pPhone" class="ws-input" maxlength="20" inputmode="tel" placeholder="010-0000-0000 (선택)">
+        </div>
+        <div class="ws-chev">⌄</div>
+      </div>
+      <div class="ws-row">
+        <div class="ws-rowmain">
+          <div class="ws-label">이름.</div>
+          <input id="pName" class="ws-input" maxlength="10" placeholder="이름 입력 (예: 강승민)">
+          <div id="pIssued" style="font-size:11.5px;color:#a2abba;line-height:1.5;margin-top:5px">입사 처리 시 내선번호와 사내 이메일이 자동 발급됩니다.</div>
+        </div>
+        <div class="ws-chev">⌄</div>
+      </div>
+      <div class="ws-row">
+        <div class="ws-rowmain">
+          <div class="ws-label">라이선스 키.</div>
+          <input id="kKey" class="ws-input" maxlength="24" placeholder="접속 키 (예: EDU-AB12-CD34)" style="font-family:var(--mono);display:none">
+          <div id="kNote" style="font-size:12.5px;color:#e0a13c;line-height:1.5;margin-top:4px;display:none"></div>
+        </div>
+        <div class="ws-chev">⌄</div>
+      </div>
+      <div id="pickWait" style="display:none;font-size:12.5px;line-height:1.65;padding:14px 0">
+        🔑 접속 키를 입력하면 진행자(강사) 설정을 확인한 뒤, 직접 선택할 항목만 표시됩니다.
+      </div>
+      <div class="ws-picksec" data-sec="dept">
+        <div class="ws-row ws-pickhead">
+          <div class="ws-rowmain"><div class="ws-label">부서 / 직무.</div><div class="ws-pickval">부서를 선택하세요</div></div>
+          <div class="ws-chev">⌄</div>
+        </div>
+        <div class="pick-grid" id="deptGrid"></div>
+      </div>
+      <div class="ws-picksec" data-sec="rank">
+        <div class="ws-row ws-pickhead">
+          <div class="ws-rowmain"><div class="ws-label">직급.</div><div class="ws-pickval">평가 트랙을 선택하세요</div></div>
+          <div class="ws-chev">⌄</div>
+        </div>
+        <div class="pick-grid" id="rankGrid"></div>
+      </div>
+      <div class="ws-picksec" data-sec="cult">
+        <div class="ws-row ws-pickhead">
+          <div class="ws-rowmain"><div class="ws-label">조직문화.</div><div class="ws-pickval">조직문화를 선택하세요</div></div>
+          <div class="ws-chev">⌄</div>
+        </div>
+        <div class="pick-grid" id="cultGrid"></div>
+      </div>
     </div>
-    <div id="kNote" style="margin-top:8px;font-size:12.5px;color:#e0a13c;display:none"></div>
-    <div id="pickWait" style="display:none;margin-top:26px;padding:16px 20px;border:1.5px dashed rgba(143,180,255,.4);border-radius:12px;color:#9db9ea;font-size:13.5px;line-height:1.7">
-      🔑 접속 키를 입력하면 진행자(강사) 설정을 확인한 뒤, 직접 선택할 항목만 표시됩니다.
-    </div>
-    <div class="pick-label">2 · 부서 / 직무 선택</div>
-    <div class="pick-grid" id="deptGrid"></div>
-    <div class="pick-label">3 · 직급 선택 (평가 트랙)</div>
-    <div class="pick-grid" id="rankGrid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))"></div>
-    <div class="pick-label">4 · 조직문화 선택</div>
-    <div class="pick-grid" id="cultGrid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))"></div>
-    <button id="btnStart" disabled>출근하기</button>
-    <p class="start-note">플레이 약 60–70분(배속 조절 가능) · 시작하자마자 전임자 미결 업무 3~4건이 도착해 있습니다 · 이메일 첨삭은 AI가 실시간 채점 · 소리 알림 포함<br>이동: W A S D 로 사무실을 자유롭게 걸어다니고, 동료를 클릭하거나 가까이에서 T 키로 말을 걸 수 있어요 · 자리 복귀는 책상(모니터) 클릭 또는 E 키 · 마우스 드래그로 시선</p>
+    <button id="btnStart" disabled>시작하기</button>
+    <p class="start-note">플레이 약 60–70분(배속 조절 가능) · 이메일 첨삭은 AI가 실시간 채점 · 소리 알림 포함<br>이동: W A S D · 동료 클릭 또는 가까이에서 T 키로 대화 · 자리 복귀는 책상 클릭 / E 키 · 마우스 드래그로 시선</p>
   </div>
 </div>
 
@@ -4044,27 +4106,27 @@ function updateBadges(){
 
 /* ---------- 시작 화면 ---------- */
 function buildStart(){
-  const rg = $('rankGrid');
-  Object.entries(RANKS).forEach(([k,r])=>{
-    const b = document.createElement('button');
-    b.className='pick-card'; b.innerHTML='<h4>'+r.name+'</h4><p>'+r.desc+'</p>';
-    b.onclick = ()=>{G.rank=k; [...rg.children].forEach(c=>c.classList.remove('sel')); b.classList.add('sel'); checkReady();};
-    rg.appendChild(b);
-  });
-  const dg = $('deptGrid');
-  Object.entries(DEPTS).forEach(([k,d])=>{
-    const b = document.createElement('button');
-    b.className='pick-card'; b.innerHTML='<h4>'+d.name+'</h4><p>'+d.desc+'</p>';
-    b.onclick = ()=>{G.dept=k; [...dg.children].forEach(c=>c.classList.remove('sel')); b.classList.add('sel'); checkReady();};
-    dg.appendChild(b);
-  });
-  const cg = $('cultGrid');
-  Object.entries(CULTURES).forEach(([k,c])=>{
-    const b = document.createElement('button');
-    b.className='pick-card'; b.innerHTML='<h4>'+c.name+'</h4><p>'+c.desc+'</p>';
-    b.onclick = ()=>{G.cult=k; [...cg.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); checkReady();};
-    cg.appendChild(b);
-  });
+  /* 각 선택 섹션을 목업 카드의 ∨ 드롭다운 행으로 구성 — 헤더 클릭 시 펼침/접힘, 선택 시 값 표시 후 접힘 */
+  const wire = (gridId, map, setKey)=>{
+    const grid = $(gridId), sec = grid.closest('.ws-picksec');
+    const head = sec ? sec.querySelector('.ws-pickhead') : null;
+    const valEl = sec ? sec.querySelector('.ws-pickval') : null;
+    if(head) head.onclick = ()=>{ sec.classList.toggle('open'); };
+    Object.entries(map).forEach(([k,r])=>{
+      const b = document.createElement('button');
+      b.className='pick-card'; b.innerHTML='<h4>'+r.name+'</h4><p>'+r.desc+'</p>';
+      b.onclick = ()=>{
+        setKey(k); [...grid.children].forEach(c=>c.classList.remove('sel')); b.classList.add('sel');
+        if(valEl){ valEl.textContent = r.name; valEl.style.color='#2f3b52'; }
+        if(sec) sec.classList.remove('open');
+        checkReady();
+      };
+      grid.appendChild(b);
+    });
+  };
+  wire('rankGrid', RANKS, k=>G.rank=k);
+  wire('deptGrid', DEPTS, k=>G.dept=k);
+  wire('cultGrid', CULTURES, k=>G.cult=k);
   $('btnStart').onclick = startGame;
 }
 function checkReady(){
@@ -4081,14 +4143,14 @@ const PICK_DEFS = [
 /* cfg === null : 키 확인 전(전부 숨김) / {} : 전부 개방 / {rank:'mgr',…} : 지정 항목 잠금 */
 function setPicksFromConfig(cfg){
   PICK_DEFS.forEach(([gridId, key, setter, valid])=>{
-    const grid = $(gridId), label = grid.previousElementSibling;
+    const grid = $(gridId), sec = grid.closest('.ws-picksec');
     const lockedVal = cfg && cfg[key] && valid(cfg[key]) ? cfg[key] : null;
     if(cfg === null || lockedVal){
-      grid.style.display='none'; label.style.display='none';
+      if(sec){ sec.style.display='none'; sec.classList.remove('open'); }
       setter(lockedVal); // null(대기) 또는 잠긴 값
       if(!lockedVal) [...grid.children].forEach(c=>c.classList.remove('sel'));
     } else {
-      grid.style.display=''; label.style.display='';
+      if(sec) sec.style.display='';
       // 열림: 사용자가 이미 클릭해 둔 카드가 있으면 유지, 없으면 미선택 상태
       if(![...grid.children].some(c=>c.classList.contains('sel'))) setter(null);
     }
@@ -4121,6 +4183,7 @@ async function checkKeyConfig(){
     const r = await api({action:'check', key});
     if(!r.ok){ applyKeyConfig({}, r.error||'키 확인 실패', true); return; }
     applyKeyConfig(r.config||{}, '키 확인됨'+(r.group?' · '+r.group:''));
+    if(r.group && !$('pSchool').value.trim()) $('pSchool').value = r.group;   // 소속 자동 프리필(수정 가능)
   }catch(e){ /* 네트워크 오류 시 출근 시점에 재확인 */ }
 }
 if(BACKEND_URL){
@@ -4142,7 +4205,7 @@ $('pName').addEventListener('input', ()=>{
     const n = 100 + Math.floor(Math.random()*900);
     G.playerDraft = {ext:'02-6301-0'+n, email:'works'+n+'@works.co.kr'};
   }
-  if(nm.length>=2) $('pIssued').innerHTML = '발급 예정 → 내선 <b style="color:#cdd9f2">'+G.playerDraft.ext+'</b> · 이메일 <b style="color:#cdd9f2">'+G.playerDraft.email+'</b>';
+  if(nm.length>=2) $('pIssued').innerHTML = '발급 예정 → 내선 <b style="color:#4a5670">'+G.playerDraft.ext+'</b> · 이메일 <b style="color:#4a5670">'+G.playerDraft.email+'</b>';
   checkReady();
 });
 async function startGame(){
@@ -4173,7 +4236,8 @@ async function startGame(){
       btn.textContent = '출근하기';
     }
   }
-  G.player = {name:nm, ext:(G.playerDraft||{ext:'02-6301-0412'}).ext, email:(G.playerDraft||{email:'works412@works.co.kr'}).email};
+  G.player = {name:nm, school:($('pSchool').value.trim() || G.keyGroup || ''), phone:$('pPhone').value.trim(),
+              ext:(G.playerDraft||{ext:'02-6301-0412'}).ext, email:(G.playerDraft||{email:'works412@works.co.kr'}).email};
   G.items = [...D.items.map(i=>({...i})), ...commonItems(), ...rankItems(G.rank)];
   if(G.rank==='mgr'){
     // 관리자 트랙: 수신확인·회식·광고성 등 저난도 문항 제외 (관리자 문항으로 대체)
@@ -7338,7 +7402,7 @@ function buildReport(){
   /* --- 보고서 데이터 패키징 + 서버 전송 --- */
   G.reportData = {
     key: G.accessKey||'', group: G.keyGroup||'',
-    name: G.player.name, dept: D.name, culture: C.name,
+    name: G.player.name, school: (G.player.school||''), phone: (G.player.phone||''), dept: D.name, culture: C.name,
     rank: RANKS[G.rank].name, psScore: Math.round(judge*0.6 + pressure*0.4),
     total, grade, growth: growth,
     skills: Object.fromEntries(skills.map(([n,v])=>[n,v])),
