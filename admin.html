@@ -152,6 +152,9 @@ dialog::backdrop{background:rgba(10,15,26,.5)}
 
 <script>
 const $ = id => document.getElementById(id);
+/* XSS 방어: 시트에서 받아온 사용자 제어 데이터(이름·소속·전화·그룹·피드백 텍스트)를
+   innerHTML 템플릿에 넣기 전 반드시 이스케이프. 악성 이름이 관리자 브라우저에서 실행되지 않게. */
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 /* 배포된 백엔드 주소 내장 — 로그인은 비밀번호만. (백엔드를 새로 배포하면 이 값만 교체) */
 const DEFAULT_BACKEND = 'https://script.google.com/macros/s/AKfycbz1Maer5DG-2I2Tl1cJTZ6kCr5lhYN97w6UJUllrqaepGsRN2XvN0m2NPd4IxdGNs5X/exec';
 let CFG = {url: localStorage.getItem('sim_url')||DEFAULT_BACKEND, pw: localStorage.getItem('sim_pw')||''};
@@ -226,16 +229,16 @@ function renderKeys(){
   const RN={jr:'신입',mid:'대리',mgr:'팀장'}, DN={mgmt:'경영지원',hr:'인사',ga:'총무',cs:'고객지원'}, CN={v:'수직',h:'수평'};
   const cfgLabel = k=>{ const c=safe(k.config); const parts=[RN[c.rank],DN[c.dept],CN[c.cult]].filter(Boolean); return parts.length?parts.join('·'):'학생 선택'; };
   $('kTable').querySelector('tbody').innerHTML = rows.map(k=>
-    '<tr><td class="mono">'+k.key+'</td><td>'+k.group+'</td><td style="font-size:12px">'+cfgLabel(k)+'</td>'+
-    '<td><span class="tag t-'+k.status+'">'+({unused:'미사용',active:'진행 중',used:'완료',revoked:'회수됨'}[k.status]||k.status)+'</span></td>'+
-    '<td>'+(k.playerName||'—')+'</td><td class="mono">'+(k.startedAt?String(k.startedAt).slice(0,16).replace('T',' '):'—')+'</td>'+
+    '<tr><td class="mono">'+esc(k.key)+'</td><td>'+esc(k.group)+'</td><td style="font-size:12px">'+cfgLabel(k)+'</td>'+
+    '<td><span class="tag t-'+k.status+'">'+({unused:'미사용',active:'진행 중',used:'완료',revoked:'회수됨'}[k.status]||esc(k.status))+'</span></td>'+
+    '<td>'+(k.playerName?esc(k.playerName):'—')+'</td><td class="mono">'+(k.startedAt?String(k.startedAt).slice(0,16).replace('T',' '):'—')+'</td>'+
     '<td class="mono">'+k.validMinutes+'</td>'+
     '<td>'+(k.status!=='used'?'<button class="btn-s" style="padding:4px 10px;font-size:11px" onclick="revoke(\''+k.key+'\')">회수</button>':'')+'</td></tr>'
   ).join('');
 }
 function fillGroups(sel, groups){
   const cur = sel.value;
-  sel.innerHTML = '<option value="">전체</option>' + groups.filter(Boolean).map(g=>'<option>'+g+'</option>').join('');
+  sel.innerHTML = '<option value="">전체</option>' + groups.filter(Boolean).map(g=>'<option>'+esc(g)+'</option>').join('');
   sel.value = cur;
 }
 async function revoke(key){
@@ -282,7 +285,7 @@ function renderStats(rows){
   $('rStatsRank').innerHTML =
     '<b style="font-size:13px">🏆 '+g+' 최종 순위 ('+ranked.length+'명 제출 기준 — 진행 중엔 새로고침)</b>'+
     '<table style="margin-top:8px"><thead><tr><th style="width:60px">순위</th><th>이름</th><th>부서</th><th>총점</th><th>등급</th><th>문제해결</th><th>제출</th></tr></thead><tbody>'+
-    ranked.map((r,i)=>'<tr><td style="font-weight:800">'+medal(i)+'</td><td><b>'+r.name+'</b></td><td>'+r.dept+'</td>'+
+    ranked.map((r,i)=>'<tr><td style="font-weight:800">'+medal(i)+'</td><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.dept)+'</td>'+
       '<td class="mono"><b>'+r.total+'</b></td><td class="mono">'+r.grade+'</td>'+
       '<td class="mono">'+(safe(r.detail).psScore!=null?safe(r.detail).psScore:'—')+'</td>'+
       '<td class="mono">'+String(r.submittedAt).slice(11,16)+'</td></tr>').join('')+
@@ -294,7 +297,7 @@ function renderReports(){
   renderStats(rows);
   $('rTable').querySelector('tbody').innerHTML = rows.map((r,i)=>{
     const d = safe(r.detail);
-    return '<tr onclick="showDetail('+i+')" style="cursor:pointer"><td><b>'+r.name+'</b></td><td>'+r.group+'</td><td>'+r.dept+'</td><td>'+r.culture+'</td>'+
+    return '<tr onclick="showDetail('+i+')" style="cursor:pointer"><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.group)+'</td><td>'+esc(r.dept)+'</td><td>'+esc(r.culture)+'</td>'+
     '<td class="mono"><b>'+r.total+'</b></td><td class="mono">'+r.grade+'</td>'+
     '<td class="mono">'+(d.doneCount!=null? d.doneCount+'/'+d.arrivedCount : '—')+'</td>'+
     '<td class="mono">'+String(r.submittedAt).slice(0,16).replace('T',' ')+'</td></tr>';
@@ -318,10 +321,10 @@ function growthDetail(gr){
 function showDetail(i){
   const r = repFiltered()[i], sk = safe(r.skills), d = safe(r.detail);
   $('dlTitle').textContent = r.name + ' — ' + r.group + ' 상세 보고서';
-  let h = '<div style="font-size:13px;color:#5b6474;margin-bottom:12px">'+r.dept+' · '+r.culture+' · 총점 <b style="font-size:17px;color:#1c2333">'+r.total+'</b> ('+r.grade+' 등급) · 처리 '+ (d.doneCount||0)+'/'+(d.arrivedCount||0)+'건</div>';
-  if(d.school || d.phone) h += '<div style="font-size:12.5px;color:#5b6474;margin:-6px 0 12px">소속 <b>'+(d.school||'—')+'</b> · 전화번호 <b>'+(d.phone||'—')+'</b></div>';
+  let h = '<div style="font-size:13px;color:#5b6474;margin-bottom:12px">'+esc(r.dept)+' · '+esc(r.culture)+' · 총점 <b style="font-size:17px;color:#1c2333">'+esc(r.total)+'</b> ('+esc(r.grade)+' 등급) · 처리 '+ (d.doneCount||0)+'/'+(d.arrivedCount||0)+'건</div>';
+  if(d.school || d.phone) h += '<div style="font-size:12.5px;color:#5b6474;margin:-6px 0 12px">소속 <b>'+(d.school?esc(d.school):'—')+'</b> · 전화번호 <b>'+(d.phone?esc(d.phone):'—')+'</b></div>';
   h += SKILL_ORDER.map(n=>'<div class="skillbar"><span>'+n+'</span><div class="bar"><div class="fill" style="width:'+(sk[n]||0)+'%"></div></div><b>'+(sk[n]||0)+'</b></div>').join('');
-  const list = (t,arr)=> arr&&arr.length ? '<h4>'+t+'</h4><ul>'+arr.map(x=>'<li>'+(typeof x==='object'? (x.subj+' — '+x.score+(t.includes('작업')?'%':'점')) : x)+'</li>').join('')+'</ul>' : '';
+  const list = (t,arr)=> arr&&arr.length ? '<h4>'+t+'</h4><ul>'+arr.map(x=>'<li>'+(typeof x==='object'? (esc(x.subj)+' — '+esc(x.score)+(t.includes('작업')?'%':'점')) : esc(x))+'</li>').join('')+'</ul>' : '';
   h += growthDetail(d.growth);
   h += list('이메일 첨삭', d.emails) + list('실무 작업 정확도', d.works) + list('잘한 점', d.goods) + list('개선점', d.fixes) + list('놓친 업무', d.missed);
   $('dlBody').innerHTML = h;

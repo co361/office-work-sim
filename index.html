@@ -630,6 +630,7 @@
         <div class="pick-grid" id="cultGrid"></div>
       </div>
     </div>
+    <p style="font-size:11px;color:#9aa3b4;line-height:1.55;margin-top:16px;text-align:center">입력하신 소속·전화번호·이름은 교육 결과 집계·개인 리포트 제공 목적으로만 사용됩니다.</p>
     <button id="btnStart" disabled>시작하기</button>
     <p class="start-note">플레이 약 60–70분(배속 조절 가능) · 이메일 첨삭은 AI가 실시간 채점 · 소리 알림 포함<br>이동: W A S D · 동료 클릭 또는 가까이에서 T 키로 대화 · 자리 복귀는 책상 클릭 / E 키 · 마우스 드래그로 시선</p>
   </div>
@@ -4386,7 +4387,7 @@ async function startGame(){
   $('hud').style.display='flex';
   $('hintBar').style.display='block';
   $('hudDept').textContent = nm+' '+RANKS[G.rank].short+' · '+D.name;
-  $('gwMe').innerHTML = '<b style="color:#fff">'+nm+'</b> · '+D.name+' '+G.rankName+'<br>'+CULTURES[G.cult].name+' · '+(G.rank==='mgr'?'팀원: ':'사수: ')+MENTOR+
+  $('gwMe').innerHTML = '<b style="color:#fff">'+esc(nm)+'</b> · '+D.name+' '+G.rankName+'<br>'+CULTURES[G.cult].name+' · '+(G.rank==='mgr'?'팀원: ':'사수: ')+MENTOR+
     '<br>☎ '+G.player.ext+'<br>✉ '+G.player.email;
   G.quests = {}; G.markers = {}; G.questActive = null; G.questDone = 0; G.npcs = G.npcs || []; G.visitor = null;
   standing=false; walk=null; walk_locked=false; seatReturn=null; moveTarget=null; G._moveToastShown=false;
@@ -4524,7 +4525,7 @@ function renderRead(it){
   }
   function btn(a,label,cls){ return '<button class="act-btn '+(cls||'')+'" data-act="'+a+'">'+label+'</button>'; }
 }
-function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 /* ---------- 행동 처리 ---------- */
 const ACT_DESC = {
@@ -6669,7 +6670,7 @@ function openCompose(it, mode){
   $('cpSubj').value = (mode==='approval-reject'?'[반려] ':'RE: ') + it.subj.replace(/^☎\s*/,'');
   $('cpBody').value = '';
   const wkNote = (it.workScore!=null ? ' <span style="color:var(--ok);font-weight:700">· 🛠 작업 결과 첨부됨 (정확도 '+it.workScore+'%)</span>' : '')
-    + '<div style="margin-top:5px;color:#5a6a94">내 서명 정보 — <b>'+G.player.name+'</b> · '+DEPTS[G.dept].name+' · ☎ '+G.player.ext+' · ✉ '+G.player.email+'</div>';
+    + '<div style="margin-top:5px;color:#5a6a94">내 서명 정보 — <b>'+esc(G.player.name)+'</b> · '+DEPTS[G.dept].name+' · ☎ '+G.player.ext+' · ✉ '+G.player.email+'</div>';
   $('cpContext').innerHTML = '<b>상황 메모</b> · ' + esc(it.role) + ' → ' +
     (mode==='approval-reject' ? '검토 결과 문제가 있다면 근거와 함께 반려 사유를 쓰세요.' :
      mode==='reject' ? '정중하게 거절하는 회신을 쓰세요.' :
