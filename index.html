@@ -606,6 +606,18 @@
         </div>
         <div class="ws-chev">⌄</div>
       </div>
+      <!-- ===== 세션코드 입장 (firebase 실시간 수업 — additive) ===== -->
+      <div class="ws-row" id="fbRow" style="flex-direction:column;align-items:stretch">
+        <div class="ws-rowmain" style="width:100%">
+          <div class="ws-label">세션코드 입장.</div>
+          <div style="display:flex;gap:8px;margin-top:5px">
+            <input id="fbCode" class="ws-input" maxlength="6" inputmode="numeric" autocomplete="off" placeholder="6자리 세션코드 (강사 제공)" style="font-family:var(--mono);flex:1">
+            <button id="fbJoin" type="button" style="padding:0 18px;white-space:nowrap;border-radius:8px;border:1px solid #3a5fbf;background:#2f4fa0;color:#eaf1ff;font-size:13px;cursor:pointer">입장</button>
+          </div>
+          <div id="fbNote" style="font-size:12.5px;line-height:1.5;margin-top:6px;display:none"></div>
+          <div style="font-size:11px;color:#9aa3b4;line-height:1.5;margin-top:5px">강사에게 받은 <b>6자리 숫자</b> 코드로 실시간 수업에 입장합니다 · 접속 키(EDU-…)는 위 <b>라이선스 키</b> 칸에 입력하세요.</div>
+        </div>
+      </div>
       <div id="pickWait" style="display:none;font-size:12.5px;line-height:1.65;padding:14px 0">
         🔑 접속 키를 입력하면 진행자(강사) 설정을 확인한 뒤, 직접 선택할 항목만 표시됩니다.
       </div>
@@ -787,6 +799,7 @@
   <div class="rp-sec"><h2>잘한 점</h2><ul class="rp-list" id="rpGood"></ul></div>
   <div class="rp-sec"><h2>개선이 필요한 점</h2><ul class="rp-list" id="rpFix"></ul></div>
   <div class="rp-sec"><h2>다음에 이렇게 해 보세요</h2><ul class="rp-list" id="rpNext"></ul></div>
+  <div class="rp-sec" id="rpDebrief" style="display:none"><h2>👩‍🏫 강사 코멘트</h2><div id="rpDebriefBody"></div></div>
   <div id="rpSync" style="margin-top:22px;font-size:13px;color:#9db0d2"></div>
   <div class="rp-btns"><button id="btnRestart">다시 플레이</button><button id="btnCloseReport">사무실로 돌아가기</button><button id="btnDlReport" style="background:#2a3654;color:#c9d6f2">📄 보고서 저장 (PDF 인쇄 가능)</button></div>
 </div></div>
@@ -4090,6 +4103,7 @@ function completeHop(qid){
 function finishQuest(qid, d){
   if(G.quests[qid]) G.quests[qid].state='done';
   G.questDone++;
+  fbStream();   /* 퀘스트 완료 → progress.quests 갱신 (firebase 모드만, 아니면 no-op) */
   G.questActive=null;
   if(d.npcQuest) despawnVisitor();
   if(d.onDone) d.onDone();
@@ -4218,7 +4232,7 @@ function buildStart(){
 }
 function checkReady(){
   const nm = $('pName').value.trim();
-  const keyOk = !BACKEND_URL || $('kKey').value.trim().length>=6 || G.testKey;
+  const keyOk = G.mode==='firebase' || !BACKEND_URL || $('kKey').value.trim().length>=6 || G.testKey;
   $('btnStart').disabled = !(G.dept && G.cult && G.rank && nm.length>=2 && keyOk);
 }
 let _keyTimer = null;
@@ -4298,7 +4312,7 @@ $('pName').addEventListener('input', ()=>{
 async function startGame(){
   const D = DEPTS[G.dept];
   const nm = $('pName').value.trim();
-  if(BACKEND_URL){
+  if(BACKEND_URL && G.mode!=='firebase'){   /* firebase(세션코드) 모드는 GAS 키 redeem을 건너뜀 — 접속키 경로 무변경 */
     const key = $('kKey').value.trim().toUpperCase();
     const btn = $('btnStart'), kn = $('kNote');
     if(TEST_KEYS.includes(key)){
@@ -4585,6 +4599,7 @@ function commitAction(it, act, emailScore){
     beep(sc>=80?1046:440);
   }
   updateBadges(); renderTab();
+  fbStream();   /* firebase 모드에서만 진척/코스지표 스트리밍 (아니면 no-op) */
 }
 
 /* ---------- 메신저: 카톡식 채팅방 (전 대화 통합) ---------- */
@@ -7219,6 +7234,7 @@ function endDay(){
   seatAtDesk();                                       // 착석·시선 클램프 복원(퇴근)
   buildReport();
   $('report').style.display='block';
+  fbShowDebrief();   /* firebase 모드: 강사 코멘트 섹션 렌더 (아니면 no-op) */
 }
 
 function avg(arr){ return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : 0; }
@@ -7505,6 +7521,7 @@ function buildReport(){
     endedAt: new Date().toISOString()
   };
   submitReport();
+  fbSubmitReport();   /* firebase 모드: RTDB에 report 기록 + status=done + completed++ (아니면 no-op) */
   /* AI 개인 총평 — 비동기 생성 (실패 시 섹션 숨김) */
   generateAiReportSummary({
     name: G.player.name, dept: D.name, rank: RANKS[G.rank].name, culture: C.name,
@@ -7578,6 +7595,211 @@ $('btnCloseReport').onclick = ()=>{ $('report').style.display='none'; };
 ['composeBox','workBox'].forEach(id=>$('stash').appendChild($(id)));
 buildStart();
 init3D();
+</script>
+<!-- =====================================================================
+     세션코드 입장 + Firebase 실시간 연동 (ADDITIVE — 기존 게임 로직 무변경)
+     · firebase 모드일 때만 SDK를 동적 로드. 로컬/아티팩트/접속키 부팅은 오염 없음.
+     · 헬퍼는 G.mode!=='firebase' 이면 즉시 no-op → 훅이 삽입돼도 기존 경로 무영향.
+     ===================================================================== -->
+<script>
+(function(){
+  'use strict';
+  /* teacher.html·admin.html과 동일 계약 (web-config.json) */
+  const FIREBASE_CFG = {
+    apiKey: "AIzaSyCCYlmrWJgVIYx0pF3QdsHcoCcxBL3qDEM",
+    authDomain: "office-sim-2004f.firebaseapp.com",
+    databaseURL: "https://office-sim-2004f-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "office-sim-2004f",
+    storageBucket: "office-sim-2004f.firebasestorage.app",
+    messagingSenderId: "436118247639",
+    appId: "1:436118247639:web:cd8025be3d99d88588f892"
+  };
+  const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.5/';
+  const SDK_FILES = ['firebase-app-compat.js','firebase-auth-compat.js','firebase-database-compat.js'];
+  const FB = { loaded:false, app:null, auth:null, db:null };
+
+  const fbIsCode = s => /^\d{6}$/.test(String(s||'').trim());
+
+  function fbLoadScript(src){
+    return new Promise((res,rej)=>{
+      const s=document.createElement('script'); s.src=src; s.async=false;
+      s.onload=()=>res(); s.onerror=()=>rej(new Error('SDK 로드 실패: '+src));
+      document.head.appendChild(s);
+    });
+  }
+  async function fbInit(){
+    if(!FB.loaded){                                  /* SDK 최초 1회 동적 로드 (세션코드 입장 시에만) */
+      for(const f of SDK_FILES) await fbLoadScript(SDK_BASE+f);
+      FB.loaded=true;
+    }
+    if(!FB.app){
+      FB.app = firebase.initializeApp(FIREBASE_CFG);
+      FB.auth = firebase.auth();
+      FB.db = firebase.database();
+      try{ await FB.auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
+    }
+  }
+
+  /* rooms/{code}/meta 확인 → 익명로그인 → 등록(트랜잭션 enrolled) */
+  async function fbJoinFlow(code){
+    await fbInit();
+    await FB.auth.signInAnonymously();
+    const sid = FB.auth.currentUser.uid;
+    const metaRef = FB.db.ref('rooms/'+code+'/meta');
+    const meta = (await metaRef.once('value')).val();
+    if(!meta) return {ok:false, error:'존재하지 않는 세션코드입니다. 코드를 다시 확인하세요.'};
+    if(meta.status!=='waiting' && meta.status!=='live') return {ok:false, error:'종료된 세션입니다.'};
+    const cap = +meta.capacity||0, enr = +meta.enrolled||0;
+    if(cap!==0 && enr>=cap) return {ok:false, error:'정원이 초과된 세션입니다.'};
+    const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+    const isNew = !(await stuRef.once('value')).exists();
+    if(isNew){
+      try{ await metaRef.child('enrolled').transaction(n => (n||0)+1); }catch(e){}
+    }
+    G.mode = 'firebase';
+    G.fb = { code, sid, preset: meta.preset||{}, joined:false, isNew };
+    return {ok:true, preset: meta.preset||{}, isNew};
+  }
+
+  /* 학생 노드 생성 + presence(onDisconnect) + lastSeen 하트비트 + 메시지 구독 */
+  async function fbRegister(name){
+    const {code, sid} = G.fb;
+    const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+    const TS = firebase.database.ServerValue.TIMESTAMP;
+    await stuRef.update({ name:String(name||'').slice(0,20), joinedAt:TS, online:true, lastSeen:TS, status:'playing' });
+    try{ stuRef.onDisconnect().update({ online:false, lastSeen:TS }); }catch(e){}
+    if(G.fb.hb) clearInterval(G.fb.hb);
+    G.fb.hb = setInterval(()=>{ try{ stuRef.child('lastSeen').set(firebase.database.ServerValue.TIMESTAMP); }catch(e){} }, 25000);
+    G.fb.joined = true;
+    fbSubscribeMessages();
+  }
+
+  /* rooms/{code}/messages child_added → 기존 toast() 로 표시 (renderMessenger·대화 상태머신 무관) */
+  function fbSubscribeMessages(){
+    const {code, sid} = G.fb;
+    const ref = FB.db.ref('rooms/'+code+'/messages');
+    const seen = new Set();
+    ref.once('value').then(snap=>{
+      snap.forEach(ch=>{ seen.add(ch.key); });     /* 입장 이전 백로그는 무시 */
+      ref.on('child_added', s=>{
+        if(seen.has(s.key)) return;
+        const m=s.val(); if(!m) return;
+        if(m.to && m.to!=='all' && m.to!==sid) return;
+        toast(m.kind==='notice'?'📢 강사 공지':'💡 강사 힌트', esc(m.text||''), m.kind==='notice'?'t-msg':'t-quest');
+      });
+    }).catch(()=>{});
+  }
+
+  /* 진행 스트리밍: commitAction/finishQuest 훅에서 호출. firebase 모드 아니면 즉시 no-op */
+  window.fbStream = function(){
+    if(G.mode!=='firebase' || !G.fb || !G.fb.joined || !FB.db) return;
+    try{
+      const {code, sid} = G.fb;
+      const base = FB.db.ref('rooms/'+code+'/students/'+sid);
+      const items = G.items||[];
+      const done = items.filter(i=>i.done).length;
+      const arrived = items.filter(i=>i.arrived).length;
+      base.child('progress').update({ done, arrived, quests: G.questDone||0 });
+      const acts = G.actionLogs||[], es = G.emailScores||[];
+      const actAvg = acts.length ? Math.round(acts.reduce((a,l)=>a+(+l.score||0),0)/acts.length) : 0;
+      const commAvg = es.length ? Math.round(es.reduce((a,e)=>a+(+e.score||0),0)/es.length) : 0;
+      base.child('live').update({ actAvg, commAvg });
+    }catch(e){}
+  };
+
+  /* 완주: students/{sid}/report = reportData; status=done; meta/completed++ */
+  window.fbSubmitReport = function(){
+    if(G.mode!=='firebase' || !G.fb || !G.fb.joined || !FB.db) return;
+    try{
+      const {code, sid} = G.fb;
+      const base = FB.db.ref('rooms/'+code+'/students/'+sid);
+      base.child('report').set(G.reportData);
+      base.child('status').set('done');
+      if(!G.fb._completed){ G.fb._completed = true;
+        try{ FB.db.ref('rooms/'+code+'/meta/completed').transaction(n => (n||0)+1); }catch(e){}
+      }
+    }catch(e){}
+  };
+
+  /* 리포트 화면: debrief/{sid} + debrief/_class read → "강사 코멘트" 섹션 렌더 (실시간 갱신) */
+  window.fbShowDebrief = function(){
+    if(G.mode!=='firebase' || !G.fb || !G.fb.joined || !FB.db) return;
+    if(G.fb._debriefBound) return; G.fb._debriefBound = true;
+    const {code, sid} = G.fb;
+    const render = ()=>{
+      const wrap = $('rpDebrief'), body = $('rpDebriefBody');
+      if(!wrap || !body) return;
+      const m = G.fb._dbMine, c = G.fb._dbClass;
+      let html='';
+      if(m && m.text) html += '<div class="rp-card" style="margin-bottom:10px"><b style="color:#243b63">개인 코멘트</b><p style="margin:6px 0 0;line-height:1.85;white-space:pre-wrap">'+esc(m.text)+'</p></div>';
+      if(c && c.text) html += '<div class="rp-card"><b style="color:#243b63">수업 총평</b><p style="margin:6px 0 0;line-height:1.85;white-space:pre-wrap">'+esc(c.text)+'</p></div>';
+      if(html){ body.innerHTML = html; wrap.style.display=''; } else { wrap.style.display='none'; }
+    };
+    try{
+      FB.db.ref('rooms/'+code+'/debrief/'+sid).on('value', s=>{ G.fb._dbMine=s.val(); render(); });
+      FB.db.ref('rooms/'+code+'/debrief/_class').on('value', s=>{ G.fb._dbClass=s.val(); render(); });
+    }catch(e){}
+  };
+
+  /* ---- 시작화면 UI 배선 ---- */
+  function fbNoteMsg(msg, isError){
+    const n = $('fbNote'); if(!n) return;
+    n.style.display = msg ? 'block' : 'none';
+    n.style.color = isError ? 'var(--warn,#e0a13c)' : '#7fd6a4';
+    n.textContent = msg||'';
+  }
+
+  async function fbDoJoin(){
+    const codeEl=$('fbCode'), btn=$('fbJoin');
+    if(!codeEl || !btn) return;
+    const code = String(codeEl.value||'').trim();
+    const nm = ($('pName').value||'').trim();
+    if(!fbIsCode(code)){ fbNoteMsg('6자리 숫자 세션코드를 입력하세요.', true); return; }
+    if(nm.length<2){ fbNoteMsg('먼저 위에서 이름을 입력하세요.', true); $('pName').focus(); return; }
+    btn.disabled=true; fbNoteMsg('세션 확인 중…', false);
+    try{
+      const r = await fbJoinFlow(code);
+      if(!r.ok){ fbNoteMsg('⚠ '+r.error, true); btn.disabled=false; return; }
+      /* preset(rank/dept/cult)를 기존 config 주입 경로로 그대로 재사용 — 선택지 숨김+자동확정 */
+      const p = r.preset||{};
+      if(typeof setPicksFromConfig==='function') setPicksFromConfig({rank:p.rank, dept:p.dept, cult:p.cult});
+      if(typeof applyKeyConfig==='function') applyKeyConfig({rank:p.rank, dept:p.dept, cult:p.cult}, '세션코드 확인됨 — 강사 설정 적용', false);
+      await fbRegister(nm);
+      const ready = (p.rank && RANKS[p.rank]) && (p.dept && DEPTS[p.dept]) && (p.cult && CULTURES[p.cult]);
+      if(ready){
+        fbNoteMsg('✓ 입장 완료 — 출근합니다.', false);
+        startGame();                       /* startGame은 firebase 가드로 GAS redeem 건너뜀 */
+      } else {
+        fbNoteMsg('✓ 입장 완료 — 남은 항목을 선택하고 [시작하기]를 누르세요.', false);
+        if(typeof checkReady==='function') checkReady();
+      }
+    }catch(e){
+      fbNoteMsg('⚠ 연결 실패 — 네트워크를 확인하거나 강사에게 문의하세요.', true);
+      btn.disabled=false;
+    }
+  }
+
+  const joinBtn=$('fbJoin');
+  if(joinBtn){
+    joinBtn.addEventListener('click', fbDoJoin);
+    const codeEl=$('fbCode');
+    if(codeEl){
+      codeEl.addEventListener('input', ()=>{ codeEl.value = codeEl.value.replace(/\D/g,'').slice(0,6); });
+      codeEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); fbDoJoin(); } });
+    }
+    /* 자동판별(additive): 기존 kKey 입력에 6자리 숫자가 들어오면 세션코드 입장 안내 (기존 리스너 유지) */
+    const kk=$('kKey');
+    if(kk){
+      kk.addEventListener('input', ()=>{
+        const v=kk.value.trim();
+        if(fbIsCode(v)){
+          const codeEl=$('fbCode'); if(codeEl && !codeEl.value) codeEl.value=v;
+          fbNoteMsg('6자리 숫자는 세션코드입니다 — 아래 [입장] 버튼으로 실시간 수업에 참여하세요.', false);
+        }
+      });
+    }
+  }
+})();
 </script>
 </body>
 </html>

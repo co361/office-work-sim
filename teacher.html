@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오피스 업무 시뮬레이션 — 강사 콘솔</title>
+<!-- Firebase compat SDK (gstatic CDN). auth + realtime database. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<style>
+:root{--navy:#243b63;--blue:#3b6fd4;--ink:#1c2333;--sub:#5b6474;--line:#dde2ea;
+  --ok:#2e9e6b;--warn:#e0a13c;--bad:#d6564f;--mono:'SF Mono','Consolas',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Apple SD Gothic Neo','Pretendard','Malgun Gothic',sans-serif;color:var(--ink);
+  background:#eef1f6;min-height:100vh}
+header{background:var(--navy);color:#fff;padding:16px 26px;display:flex;align-items:center;gap:14px}
+header h1{font-size:17px;font-weight:800}
+header .sub{font-size:12px;color:#9db0d2}
+header .right{margin-left:auto;font-size:12px;color:#9db0d2;display:flex;gap:12px;align-items:center}
+header .right button{background:rgba(255,255,255,.15);color:#fff;padding:5px 12px;font-size:12px}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 18px 60px}
+.card{background:#fff;border-radius:14px;border:1px solid var(--line);padding:22px 24px;margin-bottom:18px}
+.card h2{font-size:15px;margin-bottom:14px}
+label{display:block;font-size:12px;font-weight:700;color:var(--sub);margin-bottom:5px}
+input,select,textarea{border:1.5px solid #cfd6e2;border-radius:8px;padding:10px 12px;font-size:13.5px;
+  font-family:inherit;outline:none;background:#fff}
+input:focus,select:focus,textarea:focus{border-color:var(--blue)}
+textarea{width:100%;resize:vertical;line-height:1.6}
+button{border:none;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit}
+button:disabled{opacity:.5;cursor:default}
+.btn-p{background:var(--blue);color:#fff} .btn-p:hover{background:#2f5fc0}
+.btn-s{background:#e8edf6;color:#31456f} .btn-s:hover{background:#dbe3f2}
+.btn-g{background:var(--ok);color:#fff}
+.btn-w{background:var(--warn);color:#fff}
+.btn-d{background:var(--bad);color:#fff}
+.btn-xs{padding:5px 10px;font-size:11.5px}
+.row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.row>div{display:flex;flex-direction:column}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th{background:#f4f6fa;text-align:left;padding:9px 11px;font-size:11.5px;color:var(--sub);
+  border-bottom:1.5px solid var(--line)}
+td{padding:9px 11px;border-bottom:1px solid #eef1f6;vertical-align:middle}
+tr:hover td{background:#f8faff}
+.tag{font-size:11px;font-weight:800;border-radius:5px;padding:2px 8px;white-space:nowrap}
+.t-wait{background:#e8edf6;color:#31456f}.t-live{background:#e7f5ee;color:#1d6b46}
+.t-end{background:#fdecea;color:var(--bad)}
+.t-playing{background:#fdf3e3;color:#8a5f1e}.t-done{background:#e7f5ee;color:#1d6b46}.t-left{background:#eef1f6;color:#8b93a5}
+.mono{font-family:var(--mono);font-size:12.5px}
+.note{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.7}
+.hide{display:none}
+#login{max-width:440px;margin:70px auto}
+.stat{display:inline-block;background:#f4f6fa;border-radius:9px;padding:8px 14px;margin:0 8px 8px 0;font-size:12.5px}
+.stat b{font-family:var(--mono)}
+.scroll{max-height:520px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+/* tabs */
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tabs button{background:#e8edf6;color:#31456f}
+.tabs button.on{background:var(--navy);color:#fff}
+/* student grid */
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:6px}
+.scardsel{outline:2.5px solid var(--blue)}
+.scard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 14px;cursor:pointer;transition:.1s}
+.scard:hover{border-color:#b9c6e0;box-shadow:0 3px 12px rgba(30,50,90,.08)}
+.scard .top{display:flex;align-items:center;gap:7px;margin-bottom:9px}
+.scard .nm{font-weight:800;font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:#c3ccda}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(46,158,107,.18)}
+.pbar{height:8px;background:#eef1f6;border-radius:4px;overflow:hidden;margin:5px 0}
+.pbar>i{display:block;height:100%;background:linear-gradient(90deg,#4d7fe0,#8fb4ff)}
+.scard .mini{font-size:11.5px;color:var(--sub);display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.badge{font-size:11px;font-weight:800;border-radius:6px;padding:2px 8px;background:#eaf1ff;color:#2b4a86;margin-left:auto}
+/* skillbar (admin 재사용) */
+.skillbar{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.skillbar span{width:150px;font-size:12px;color:var(--sub)}
+.skillbar .bar{flex:1;height:8px;background:#eef1f6;border-radius:4px;overflow:hidden}
+.skillbar .fill{height:100%;background:linear-gradient(90deg,#4d7fe0,#8fb4ff)}
+.skillbar b{width:36px;text-align:right;font-family:var(--mono);font-size:12px}
+.radarbox{background:#18233d;border-radius:14px;padding:10px;display:inline-block}
+h4.sh{font-size:13px;margin:14px 0 6px;color:var(--blue)}
+.dbcols{display:flex;gap:26px;flex-wrap:wrap}
+.dbcols>div{flex:1;min-width:280px}
+ul.rlist{margin-left:18px;font-size:13px;line-height:1.8}
+@media print{
+  header,.tabs,.noprint{display:none!important}
+  .card{border:none;box-shadow:none;margin:0}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎓 업무 시뮬레이션 강사 콘솔</h1><span class="sub">edmakers 라이브 교실</span>
+  <span class="right" id="hdRight"></span>
+</header>
+
+<!-- ===== 로그인 ===== -->
+<div class="wrap" id="login">
+  <div class="card">
+    <h2>강사 로그인</h2>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div><label>이메일</label><input id="inEmail" type="email" style="width:100%" placeholder="강사 이메일" autocomplete="username"></div>
+      <div><label>비밀번호</label><input id="inPw" type="password" style="width:100%" placeholder="비밀번호" autocomplete="current-password"></div>
+      <button class="btn-p" id="btnLogin">로그인</button>
+      <div class="note" id="loginMsg">관리자가 발급한 강사 계정으로 로그인하세요. 첫 로그인 후 비밀번호를 바꾸는 것을 권장합니다.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 승인 대기/정지 안내 ===== -->
+<div class="wrap hide" id="locked">
+  <div class="card">
+    <h2 id="lockTitle">승인 대기 중</h2>
+    <div class="note" id="lockMsg"></div>
+    <div style="margin-top:14px"><button class="btn-s" onclick="doLogout()">로그아웃</button></div>
+  </div>
+</div>
+
+<!-- ===== 방 목록 ===== -->
+<div class="wrap hide" id="roomsView">
+  <div class="card">
+    <h2>방(수업) 만들기</h2>
+    <div class="row">
+      <div><label>직급 트랙</label><select id="cpRank" style="width:150px">
+        <option value="">학생 선택</option><option value="jr">신입사원</option>
+        <option value="mid">주임·대리</option><option value="mgr">팀장(관리자)</option></select></div>
+      <div><label>부서</label><select id="cpDept" style="width:150px">
+        <option value="">학생 선택</option><option value="mgmt">경영지원팀</option>
+        <option value="hr">인사팀</option><option value="ga">총무팀</option><option value="cs">고객지원팀</option></select></div>
+      <div><label>조직문화</label><select id="cpCult" style="width:130px">
+        <option value="">학생 선택</option><option value="v">수직적</option><option value="h">수평적</option></select></div>
+      <div><label>정원 (0=무제한)</label><input id="cpCap" type="number" value="30" min="0" max="300" style="width:130px"></div>
+      <button class="btn-p" id="btnCreate">방 개설</button>
+    </div>
+    <div class="note">개설하면 6자리 참가코드가 생성됩니다. 학생은 index 화면에서 이 코드로 입장합니다.
+      선택을 비우면(학생 선택) 학생이 직접 고릅니다. 방은 개설 후 12시간 뒤 자동 만료됩니다.</div>
+  </div>
+
+  <div class="card">
+    <h2>내 방 목록 <button class="btn-s btn-xs" id="btnRoomsRefresh" style="margin-left:8px">새로고침</button></h2>
+    <div class="scroll"><table id="roomTable">
+      <thead><tr><th>코드</th><th>상태</th><th>설정(직급·부서·문화)</th><th>정원</th><th>입장</th><th>완주</th><th>개설시각</th><th>액션</th></tr></thead>
+      <tbody></tbody></table></div>
+    <div class="note" id="roomsEmpty"></div>
+  </div>
+</div>
+
+<!-- ===== 방 상세(모니터/디브리프) ===== -->
+<div class="wrap hide" id="roomView">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn-s btn-xs" onclick="showRooms()">← 방 목록</button>
+      <h2 style="margin:0">방 <span class="mono" id="rvCode"></span> <span id="rvStatus"></span></h2>
+      <span id="rvMeta" style="font-size:12.5px;color:var(--sub)"></span>
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn-g btn-xs" id="btnStart">시작</button>
+        <button class="btn-d btn-xs" id="btnEnd">종료</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="tabs noprint">
+    <button data-tab="monitor" class="on">라이브 모니터</button>
+    <button data-tab="debrief">디브리프</button>
+  </div>
+
+  <!-- 라이브 모니터 -->
+  <div id="tab-monitor">
+    <div class="card noprint">
+      <h2>상호작용 — 힌트/공지 보내기</h2>
+      <div class="row">
+        <div><label>대상</label><select id="msgTo" style="width:220px"><option value="all">전체 학생</option></select></div>
+        <div><label>종류</label><select id="msgKind" style="width:120px"><option value="hint">힌트</option><option value="notice">공지</option></select></div>
+        <div style="flex:1;min-width:240px"><label>내용</label><input id="msgText" style="width:100%" placeholder="예: 첨부파일을 먼저 확인하세요"></div>
+        <button class="btn-p" id="btnSendMsg">보내기</button>
+      </div>
+      <div class="note" id="msgOut"></div>
+    </div>
+    <div class="card">
+      <h2>라이브 모니터 <span id="monStats" style="font-weight:400;font-size:12.5px;color:var(--sub);margin-left:8px"></span></h2>
+      <div class="note noprint">카드를 클릭하면 상호작용 대상으로 지정됩니다. 진행지표(진척·코스 평균)만 실시간으로 표시되며,
+        정밀 6역량 진단은 완주 후 [디브리프]에서 확인합니다.</div>
+      <div class="sgrid" id="sgrid"></div>
+      <div class="note" id="monEmpty"></div>
+    </div>
+  </div>
+
+  <!-- 디브리프 -->
+  <div id="tab-debrief" class="hide">
+    <div class="card noprint">
+      <h2>전체 요약</h2>
+      <div id="dbSummary"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-g btn-xs" id="btnExportCsv">📥 완주 리포트 CSV</button>
+        <button class="btn-s btn-xs" onclick="window.print()">🖨 인쇄</button>
+      </div>
+    </div>
+    <div class="card noprint">
+      <h2>수업 전체 총평</h2>
+      <textarea id="classComment" rows="3" placeholder="수업 전체에 대한 총평을 입력하세요 (학생이 자기 리포트에서 확인)"></textarea>
+      <div style="margin-top:8px"><button class="btn-p btn-xs" id="btnSaveClass">전체 총평 저장</button>
+        <span class="note" id="classOut" style="display:inline;margin-left:8px"></span></div>
+    </div>
+    <div class="card">
+      <h2>학생 디브리프</h2>
+      <div class="row noprint">
+        <div><label>학생 선택</label><select id="dbPick" style="width:260px"></select></div>
+      </div>
+      <div id="dbBody" style="margin-top:14px"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="noprint" style="text-align:center;font-size:11px;color:#9aa3b5;line-height:1.6;padding:22px 26px 30px">© 2026 edmakers. 인가된 라이선스 하에서만 이용할 수 있습니다.</footer>
+
+<script>
+/* ===================== 상수/유틸 ===================== */
+const FIREBASE_CFG = {
+  apiKey: "AIzaSyCCYlmrWJgVIYx0pF3QdsHcoCcxBL3qDEM",
+  authDomain: "office-sim-2004f.firebaseapp.com",
+  databaseURL: "https://office-sim-2004f-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "office-sim-2004f",
+  storageBucket: "office-sim-2004f.firebasestorage.app",
+  messagingSenderId: "436118247639",
+  appId: "1:436118247639:web:cd8025be3d99d88588f892"
+};
+const $ = id => document.getElementById(id);
+/* XSS 방어: 학생 이름·리포트 텍스트를 innerHTML에 넣기 전 이스케이프 (admin.html esc 재사용) */
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function csvEsc(v){ v = String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function dl(filename, text, mime){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿'+text], {type: mime||'text/plain;charset=utf-8'}));
+  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+/* index.html/admin.html과 동일한 6역량 순서 */
+const SKILL_ORDER = ['우선순위 · 시간 관리','문제해결 · 상황판단','업무 커뮤니케이션','위임과 자원 배분','정보 파악 · 정확성','압박 상황 대처'];
+const RN={jr:'신입',mid:'대리',mgr:'팀장'}, DN={mgmt:'경영지원',hr:'인사',ga:'총무',cs:'고객지원'}, CN={v:'수직',h:'수평'};
+const STLABEL={waiting:'대기',live:'진행',ended:'종료'};
+const STCLASS={waiting:'t-wait',live:'t-live',ended:'t-end'};
+const SSLABEL={playing:'진행중',done:'완주',left:'이탈'};
+const PRESENCE_MS = 45000;   // online===true & (now-lastSeen)<이 값 → 접속 중으로 표시
+
+/* ===================== Firebase 초기화 ===================== */
+firebase.initializeApp(FIREBASE_CFG);
+const auth = firebase.auth();
+const db   = firebase.database();
+const TS   = () => firebase.database.ServerValue.TIMESTAMP;
+/* 세션 지속(익명 아님 — 강사 로그인 유지). compat 기본이 local persistence. */
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+
+/* ===================== 앱 상태 ===================== */
+const T = {
+  uid:null, email:null, instructor:null,
+  code:null, meta:null,               // 현재 열람 중인 방
+  studentsSnap:{},                    // sid -> student node (라이브 모니터 구독 결과)
+  monRef:null,                        // 구독 중인 students ref (해제용)
+  selSid:null,                        // 상호작용 대상 학생
+  dbSid:null,                         // 디브리프에서 선택한 학생
+  presenceTimer:null
+};
+
+/* 내가 만든 방 코드 로컬 백업 캐시.
+   §5 규칙이 /instructors/$uid 전체를 admin-write-only로 두면 강사가 자기 rooms 인덱스를
+   못 쓸 수 있으므로, 인덱스 쓰기가 거부돼도 목록이 유지되도록 로컬에도 보관한다. */
+function cacheKey(){ return 'ts_rooms_'+(T.uid||''); }
+function cachedCodes(){ try{ return JSON.parse(localStorage.getItem(cacheKey())||'[]'); }catch(e){ return []; } }
+function cacheAdd(code){ const s=new Set(cachedCodes()); s.add(code); localStorage.setItem(cacheKey(), JSON.stringify([...s])); }
+
+/* ===================== 로그인 ===================== */
+$('inPw').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btnLogin').click(); });
+$('btnLogin').onclick = async ()=>{
+  const email = $('inEmail').value.trim(), pw = $('inPw').value;
+  if(!email || !pw){ $('loginMsg').textContent='이메일과 비밀번호를 입력하세요.'; return; }
+  $('loginMsg').textContent = '로그인 중…';
+  try{
+    await auth.signInWithEmailAndPassword(email, pw);   // onAuthStateChanged가 이후 처리
+  }catch(e){
+    $('loginMsg').textContent = '⚠ 로그인 실패: ' + (e.code||e.message||e);
+  }
+};
+function doLogout(){ if(T.monRef){ T.monRef.off(); T.monRef=null; } auth.signOut(); }
+window.doLogout = doLogout;
+
+/* 인증 상태 → 강사 승인 확인 */
+auth.onAuthStateChanged(async user=>{
+  if(!user){ show('login'); T.uid=null; return; }
+  T.uid = user.uid; T.email = user.email;
+  // READ: /instructors/{uid}
+  let inst=null;
+  try{ inst = (await db.ref('instructors/'+user.uid).once('value')).val(); }catch(e){ inst=null; }
+  T.instructor = inst;
+  if(!inst || inst.status!=='approved'){
+    $('lockTitle').textContent = (inst && inst.status==='suspended') ? '계정 정지됨' : '승인 대기 중';
+    $('lockMsg').innerHTML = (inst && inst.status==='suspended')
+      ? '이 계정은 정지되었습니다. 관리자에게 문의하세요.'
+      : '아직 승인된 강사 계정이 아닙니다. 관리자가 계정을 승인하면 기능이 열립니다.<br>(관리자: '
+        + esc(user.email) + ' 의 <span class="mono">instructors/'+esc(user.uid)+'</span> 노드에 status=approved 설정)';
+    show('locked');
+    return;
+  }
+  $('hdRight').innerHTML = esc(inst.displayName||user.email) + ' <button onclick="doLogout()">로그아웃</button>';
+  showRooms();
+  loadRooms();
+});
+
+function show(which){
+  ['login','locked','roomsView','roomView'].forEach(id=>$(id).classList.toggle('hide', id!==which));
+  if(which!=='roomView' && T.presenceTimer){ clearInterval(T.presenceTimer); T.presenceTimer=null; }
+}
+function showRooms(){
+  if(T.monRef){ T.monRef.off(); T.monRef=null; }
+  T.code=null; T.meta=null; T.studentsSnap={};
+  show('roomsView');
+}
+
+/* ===================== 방 목록 ===================== */
+$('btnRoomsRefresh').onclick = loadRooms;
+async function loadRooms(){
+  $('roomsEmpty').textContent = '불러오는 중…';
+  // READ: /instructors/{uid}/rooms (코드 인덱스)
+  let idxCodes = [];
+  try{
+    const idx = (await db.ref('instructors/'+T.uid+'/rooms').once('value')).val() || {};
+    idxCodes = Object.keys(idx);
+  }catch(e){ /* 인덱스 read 실패 시 로컬 캐시만 사용 */ }
+  const codes = [...new Set(idxCodes.concat(cachedCodes()))];
+  if(!codes.length){ $('roomTable').querySelector('tbody').innerHTML=''; $('roomsEmpty').textContent='아직 개설한 방이 없습니다.'; return; }
+  // READ: 각 code로 /rooms/{code}/meta
+  const metas = await Promise.all(codes.map(async c=>{
+    try{ return {code:c, meta:(await db.ref('rooms/'+c+'/meta').once('value')).val()}; }
+    catch(e){ return {code:c, meta:null}; }
+  }));
+  // 내 소유(meta.owner===uid)만, 개설시각 내림차순
+  const mine = metas.filter(m=>m.meta && m.meta.owner===T.uid)
+                    .sort((a,b)=>(b.meta.createdAt||0)-(a.meta.createdAt||0));
+  $('roomsEmpty').textContent = mine.length? '' : '표시할 방이 없습니다.';
+  $('roomTable').querySelector('tbody').innerHTML = mine.map(({code,meta})=>{
+    const p = meta.preset||{};
+    const cfg = [RN[p.rank],DN[p.dept],CN[p.cult]].filter(Boolean).join('·') || '학생 선택';
+    const cap = meta.capacity ? meta.capacity : '무제한';
+    return '<tr><td class="mono"><b>'+esc(code)+'</b></td>'+
+      '<td><span class="tag '+(STCLASS[meta.status]||'')+'">'+(STLABEL[meta.status]||esc(meta.status))+'</span></td>'+
+      '<td style="font-size:12px">'+cfg+'</td>'+
+      '<td class="mono">'+cap+'</td><td class="mono">'+(meta.enrolled||0)+'</td><td class="mono">'+(meta.completed||0)+'</td>'+
+      '<td class="mono">'+fmtTime(meta.createdAt)+'</td>'+
+      '<td><button class="btn-p btn-xs" onclick="openRoom(\''+code+'\')">열기</button></td></tr>';
+  }).join('');
+}
+function fmtTime(ms){ if(!ms) return '—'; const d=new Date(ms); const p=n=>String(n).padStart(2,'0');
+  return p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+window.openRoom = openRoom;
+
+/* ===================== 방 생성 ===================== */
+$('btnCreate').onclick = async ()=>{
+  $('btnCreate').disabled = true; $('btnCreate').textContent='개설 중…';
+  try{
+    const preset = { rank:$('cpRank').value, dept:$('cpDept').value, cult:$('cpCult').value };
+    const capacity = Math.max(0, +$('cpCap').value||0);
+    const code = await genCode();
+    // WRITE: /rooms/{code}/meta
+    await db.ref('rooms/'+code+'/meta').set({
+      owner: T.uid, ownerName: (T.instructor.displayName||T.email||''),
+      status:'waiting', preset, capacity, enrolled:0, completed:0,
+      createdAt: TS(), expiry: Date.now() + 12*3600*1000
+    });
+    // WRITE: /instructors/{uid}/rooms/{code}=true (내 방 인덱스). 규칙상 거부될 수 있어 실패 허용.
+    try{ await db.ref('instructors/'+T.uid+'/rooms/'+code).set(true); }
+    catch(e){ console.warn('rooms 인덱스 쓰기 거부(§5 규칙 확인 필요) — 로컬 캐시로 대체', e); }
+    cacheAdd(code);
+    alert('방이 개설되었습니다.\n참가코드: '+code);
+    loadRooms();
+  }catch(e){ alert('개설 실패: '+(e.code||e.message||e)); }
+  finally{ $('btnCreate').disabled=false; $('btnCreate').textContent='방 개설'; }
+};
+/* 6자리 코드 생성 + 충돌 회피(meta read 후 없으면 확정, 있으면 재시도) */
+async function genCode(){
+  for(let i=0;i<8;i++){
+    const code = String(Math.floor(100000 + Math.random()*900000));
+    const snap = await db.ref('rooms/'+code+'/meta').once('value');
+    if(!snap.exists()) return code;
+  }
+  throw new Error('코드 생성 충돌이 반복됩니다. 다시 시도하세요.');
+}
+
+/* ===================== 방 상세: 열기/시작/종료 ===================== */
+async function openRoom(code){
+  T.code = code; T.selSid=null; T.dbSid=null;
+  const meta = (await db.ref('rooms/'+code+'/meta').once('value')).val();
+  T.meta = meta;
+  $('rvCode').textContent = code;
+  renderRoomHeader();
+  show('roomView');
+  switchTab('monitor');
+  subscribeStudents();
+  loadDebriefComments();
+  // 초기 프레젠스 갱신 타이머 (lastSeen 경과로 온라인/이탈 표시가 바뀌도록)
+  if(T.presenceTimer) clearInterval(T.presenceTimer);
+  T.presenceTimer = setInterval(()=>{ if(!$('tab-monitor').classList.contains('hide')) renderMonitor(); }, 8000);
+}
+function renderRoomHeader(){
+  const m=T.meta||{}, p=m.preset||{};
+  $('rvStatus').innerHTML = '<span class="tag '+(STCLASS[m.status]||'')+'">'+(STLABEL[m.status]||'')+'</span>';
+  const cfg=[RN[p.rank],DN[p.dept],CN[p.cult]].filter(Boolean).join('·')||'학생 선택';
+  $('rvMeta').textContent = cfg + ' · 정원 '+(m.capacity?m.capacity:'무제한')+' · 입장 '+(m.enrolled||0)+' · 완주 '+(m.completed||0);
+  $('btnStart').disabled = (m.status==='ended');
+  $('btnStart').textContent = (m.status==='waiting')?'시작':'재시작';
+}
+$('btnStart').onclick = async ()=>{
+  // WRITE: /rooms/{code}/meta {status:'live', startedAt}
+  await db.ref('rooms/'+T.code+'/meta').update({status:'live', startedAt:TS()});
+  T.meta.status='live'; renderRoomHeader(); loadRooms();
+};
+$('btnEnd').onclick = async ()=>{
+  if(!confirm('방을 종료할까요? 종료 후에는 신규 입장이 차단됩니다.')) return;
+  // WRITE: /rooms/{code}/meta {status:'ended', endedAt}
+  await db.ref('rooms/'+T.code+'/meta').update({status:'ended', endedAt:TS()});
+  // 학생 online 정리 (규칙상 소유 강사는 students 쓰기 허용)
+  const ups={};
+  Object.keys(T.studentsSnap).forEach(sid=>{ ups[sid+'/online']=false; });
+  if(Object.keys(ups).length){ try{ await db.ref('rooms/'+T.code+'/students').update(ups); }catch(e){} }
+  T.meta.status='ended'; renderRoomHeader(); loadRooms();
+};
+
+/* ===================== 탭 ===================== */
+document.querySelectorAll('.tabs button').forEach(b=> b.onclick=()=>switchTab(b.dataset.tab));
+function switchTab(name){
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
+  $('tab-monitor').classList.toggle('hide', name!=='monitor');
+  $('tab-debrief').classList.toggle('hide', name!=='debrief');
+  if(name==='debrief'){ renderDebriefPicker(); renderSummary(); }
+}
+
+/* ===================== 라이브 모니터 ===================== */
+function subscribeStudents(){
+  if(T.monRef){ T.monRef.off(); }
+  T.studentsSnap = {};
+  // READ(실시간): /rooms/{code}/students on value
+  T.monRef = db.ref('rooms/'+T.code+'/students');
+  T.monRef.on('value', snap=>{
+    T.studentsSnap = snap.val() || {};
+    renderMonitor();
+    renderMsgTargets();
+    if(!$('tab-debrief').classList.contains('hide')){ renderDebriefPicker(); renderSummary(); }
+  }, err=>{ $('monEmpty').textContent = '학생 데이터 구독 실패: '+(err.code||err.message||err); });
+}
+function isOnline(s){ return s.online===true && s.lastSeen && (Date.now()-s.lastSeen) < PRESENCE_MS; }
+function renderMonitor(){
+  const entries = Object.entries(T.studentsSnap);
+  const online = entries.filter(([,s])=>isOnline(s)).length;
+  const done = entries.filter(([,s])=>s.status==='done').length;
+  $('monStats').textContent = '학생 '+entries.length+'명 · 접속 '+online+' · 완주 '+done;
+  $('monEmpty').textContent = entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.';
+  $('sgrid').innerHTML = entries.map(([sid,s])=>{
+    const prog = s.progress||{}, live=s.live||{}, rep=s.report||{};
+    const done_=prog.done||0, arr=prog.arrived||0, pct = arr? Math.round(done_/arr*100):0;
+    const on = isOnline(s);
+    const badge = (s.status==='done' && rep.total!=null)
+      ? '<span class="badge">'+esc(rep.grade||'')+' · '+esc(rep.total)+'점</span>' : '';
+    return '<div class="scard'+(sid===T.selSid?' scardsel':'')+'" onclick="selStudent(\''+sid+'\')">'+
+      '<div class="top"><span class="dot'+(on?' on':'')+'"></span><span class="nm">'+esc(s.name||'학생')+'</span>'+badge+'</div>'+
+      '<span class="tag '+({playing:'t-playing',done:'t-done',left:'t-left'}[s.status]||'t-playing')+'">'+(SSLABEL[s.status]||'진행중')+'</span>'+
+      '<div class="pbar"><i style="width:'+pct+'%"></i></div>'+
+      '<div class="mini"><span>진척 '+done_+'/'+arr+'</span><span>퀘스트 '+(prog.quests||0)+'</span>'+
+        (live.actAvg!=null?'<span>판단 '+live.actAvg+'</span>':'')+(live.commAvg!=null?'<span>소통 '+live.commAvg+'</span>':'')+
+        '</div></div>';
+  }).join('');
+}
+window.selStudent = sid=>{ T.selSid=sid; $('msgTo').value=sid; renderMonitor(); };
+
+/* ===================== 상호작용 (힌트/공지 push) ===================== */
+function renderMsgTargets(){
+  const cur=$('msgTo').value;
+  $('msgTo').innerHTML = '<option value="all">전체 학생</option>' +
+    Object.entries(T.studentsSnap).map(([sid,s])=>'<option value="'+esc(sid)+'">'+esc(s.name||sid)+'</option>').join('');
+  $('msgTo').value = (cur && (cur==='all'||T.studentsSnap[cur]))? cur : 'all';
+}
+$('btnSendMsg').onclick = async ()=>{
+  const text=$('msgText').value.trim(); if(!text){ return; }
+  const to=$('msgTo').value, kind=$('msgKind').value;
+  try{
+    // WRITE: push /rooms/{code}/messages {to, kind, text, at}
+    await db.ref('rooms/'+T.code+'/messages').push({to, kind, text, at:TS()});
+    $('msgText').value=''; $('msgOut').textContent='✓ 전송됨 ('+(to==='all'?'전체':(T.studentsSnap[to]?.name||to))+', '+kind+')';
+    setTimeout(()=>$('msgOut').textContent='', 2500);
+  }catch(e){ $('msgOut').textContent='⚠ 전송 실패: '+(e.code||e.message||e); }
+};
+
+/* ===================== 디브리프 ===================== */
+function renderDebriefPicker(){
+  const cur=$('dbPick').value;
+  const opts = Object.entries(T.studentsSnap).map(([sid,s])=>{
+    const done = s.status==='done'?' ✓완주':'';
+    return '<option value="'+esc(sid)+'">'+esc(s.name||sid)+done+'</option>';
+  });
+  $('dbPick').innerHTML = '<option value="">— 학생 선택 —</option>'+opts.join('');
+  if(cur && T.studentsSnap[cur]) $('dbPick').value=cur;
+}
+$('dbPick').onchange = ()=>{ const sid=$('dbPick').value; if(sid) openDebrief(sid); else $('dbBody').innerHTML=''; };
+
+async function openDebrief(sid){
+  T.dbSid=sid;
+  $('dbBody').innerHTML='<div class="note">불러오는 중…</div>';
+  // READ: /rooms/{code}/students/{sid}/report
+  const rep = (await db.ref('rooms/'+T.code+'/students/'+sid+'/report').once('value')).val();
+  const s = T.studentsSnap[sid]||{};
+  if(!rep){ $('dbBody').innerHTML='<div class="note">'+esc(s.name||sid)+' 님의 완주 리포트가 아직 없습니다. (완주 시 자동 기록)</div>'; return; }
+  // READ: 기존 개인 코멘트
+  const cmt = (await db.ref('rooms/'+T.code+'/debrief/'+sid).once('value')).val() || {};
+  renderReport(rep, s, sid, cmt);
+}
+/* index.html reportData 구조를 그대로 렌더 */
+function renderReport(d, s, sid, cmt){
+  const sk = d.skills||{};
+  const skillArr = SKILL_ORDER.map(n=>[n, sk[n]||0]);
+  const bars = SKILL_ORDER.map(n=>
+    '<div class="skillbar"><span>'+esc(n)+'</span><div class="bar"><div class="fill" style="width:'+(sk[n]||0)+'%"></div></div><b>'+(sk[n]||0)+'</b></div>').join('');
+  const list=(t,arr,unit)=> (arr&&arr.length)?'<h4 class="sh">'+t+'</h4><ul class="rlist">'+arr.map(x=>
+      typeof x==='object'?'<li>'+esc(x.subj)+' — '+esc(x.score)+(unit||'')+'</li>':'<li>'+esc(x)+'</li>').join('')+'</ul>':'';
+  const h =
+    '<div style="font-size:13px;color:var(--sub);margin-bottom:6px">'+esc(d.name||s.name||'')+' · '+esc(d.rank||'')+' · '+esc(d.dept||'')+' · '+esc(d.culture||'')+'</div>'+
+    '<div style="font-size:14px;margin-bottom:14px">총점 <b style="font-size:20px">'+esc(d.total)+'</b> ('+esc(d.grade)+' 등급) · 문제해결력 '+esc(d.psScore)+'점 · 처리 '+esc(d.doneCount)+'/'+esc(d.arrivedCount)+'건</div>'+
+    '<div class="dbcols">'+
+      '<div style="flex:0 0 auto"><div class="radarbox"><canvas id="dbRadar"></canvas></div></div>'+
+      '<div><h4 class="sh">역량별 평가</h4>'+bars+ growthHtml(d.growth) +'</div>'+
+    '</div>'+
+    list('이메일 첨삭', d.emails, '점') + list('실무 작업 정확도', d.works, '%') +
+    list('잘한 점', d.goods) + list('개선점', d.fixes) + list('놓친 업무', d.missed) +
+    '<h4 class="sh noprint">강사 코멘트 (이 학생에게)</h4>'+
+    '<textarea id="dbComment" class="noprint" rows="3" placeholder="개인별 코멘트 (학생이 자기 리포트에서 확인)">'+esc(cmt.text||'')+'</textarea>'+
+    '<div class="noprint" style="margin-top:8px"><button class="btn-p btn-xs" onclick="saveComment(\''+sid+'\')">코멘트 저장</button>'+
+      '<span class="note" id="cmtOut" style="display:inline;margin-left:8px"></span></div>';
+  $('dbBody').innerHTML = h;
+  drawRadar($('dbRadar'), skillArr);
+}
+function growthHtml(gr){
+  if(!gr) return '';
+  const one=g=>{ if(!g) return '—'; if(g.verdict==='hold') return '보류(표본 '+g.n+'건)';
+    const v=g.verdict==='up'?'↗ 향상':g.verdict==='down'?'↘ 하락':'→ 정체';
+    return v+' '+g.early+'→'+g.late+' ('+(g.delta>0?'+':'')+g.delta+')'; };
+  return '<h4 class="sh">세션 성장 곡선 (초반→후반)</h4><ul class="rlist">'+
+    '<li>업무 커뮤니케이션: '+esc(one(gr.comm))+'</li>'+
+    '<li>문제해결·상황판단: '+esc(one(gr.judge))+'</li></ul>';
+}
+window.saveComment = async sid=>{
+  const text=$('dbComment').value.trim();
+  // WRITE: /rooms/{code}/debrief/{sid} = {text, by, at}
+  await db.ref('rooms/'+T.code+'/debrief/'+sid).set({text, by:T.uid, at:TS()});
+  $('cmtOut').textContent='✓ 저장됨'; setTimeout(()=>$('cmtOut').textContent='',2000);
+};
+
+/* drawRadar — index.html drawRadar 이식(순수 함수). report.skills 값으로 재드로우.
+   skillArr = [[name,value]×6], 순서는 SKILL_ORDER = 게임과 동일. */
+function drawRadar(cv, skills){
+  if(!cv) return;
+  const SHORT=['시간','판단','소통','위임','정보','압박'];
+  const css=280, dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=css*dpr; cv.height=css*dpr; cv.style.width=css+'px'; cv.style.height=css+'px';
+  const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  const cx=css/2, cy=css/2, R0=css/2-50;
+  const pt=(i,rad)=>{ const a=-Math.PI/2+i*Math.PI/3; return [cx+Math.cos(a)*rad, cy+Math.sin(a)*rad]; };
+  ctx.strokeStyle='rgba(255,255,255,.13)'; ctx.lineWidth=1;
+  for(let g=20;g<=100;g+=20){ ctx.beginPath();
+    for(let i=0;i<6;i++){ const [x,y]=pt(i,R0*g/100); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.closePath(); ctx.stroke(); }
+  for(let i=0;i<6;i++){ const [x,y]=pt(i,R0); ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(x,y); ctx.stroke(); }
+  ctx.beginPath();
+  skills.forEach((s,i)=>{ const [x,y]=pt(i,R0*Math.max(4,s[1])/100); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.closePath(); ctx.fillStyle='rgba(96,146,255,.30)'; ctx.fill();
+  ctx.strokeStyle='#6f9bff'; ctx.lineWidth=2; ctx.stroke();
+  skills.forEach((s,i)=>{
+    const [x,y]=pt(i,R0*Math.max(4,s[1])/100);
+    ctx.beginPath(); ctx.arc(x,y,3.2,0,7); ctx.fillStyle='#b9d0ff'; ctx.fill();
+    const [lx,ly]=pt(i,R0+26);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='700 12px "Apple SD Gothic Neo","Malgun Gothic",sans-serif'; ctx.fillStyle='#b7c4e0';
+    ctx.fillText(SHORT[i], lx, ly-8);
+    ctx.font='800 12.5px monospace'; ctx.fillStyle='#e9edf5';
+    ctx.fillText(s[1], lx, ly+8);
+  });
+}
+
+/* ---------- 전체 요약(클라 집계) ---------- */
+function renderSummary(){
+  const reps = Object.values(T.studentsSnap).filter(s=>s.status==='done' && s.report && s.report.total!=null).map(s=>s.report);
+  const box=$('dbSummary');
+  if(!reps.length){ box.innerHTML='<div class="note">완주한 학생이 아직 없습니다.</div>'; return; }
+  const totals=reps.map(r=>+r.total||0);
+  const avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):0;
+  const grades={}; reps.forEach(r=>{ grades[r.grade]=(grades[r.grade]||0)+1; });
+  const gradeChips=['A','B','C','D','F'].filter(g=>grades[g]).map(g=>'<span class="tag t-done" style="margin-right:5px">'+g+' × '+grades[g]+'</span>').join('');
+  const skillsHtml=SKILL_ORDER.map(n=>{ const v=avg(reps.map(r=>+((r.skills||{})[n]||0)));
+    return '<div class="skillbar"><span>'+esc(n)+'</span><div class="bar"><div class="fill" style="width:'+v+'%"></div></div><b>'+v+'</b></div>'; }).join('');
+  box.innerHTML =
+    '<div><span class="stat">완주 <b>'+reps.length+'</b>명</span>'+
+    '<span class="stat">평균 총점 <b>'+avg(totals)+'</b></span>'+
+    '<span class="stat">최고 <b>'+Math.max(...totals)+'</b> · 최저 <b>'+Math.min(...totals)+'</b></span></div>'+
+    '<div style="margin:8px 0">'+gradeChips+'</div>'+
+    '<div style="max-width:520px;margin-top:8px">'+skillsHtml+'</div>';
+}
+/* 수업 전체 총평 */
+async function loadDebriefComments(){
+  const cls=(await db.ref('rooms/'+T.code+'/debrief/_class').once('value')).val()||{};
+  $('classComment').value = cls.text||'';
+}
+$('btnSaveClass').onclick = async ()=>{
+  // WRITE: /rooms/{code}/debrief/_class = {text, by, at}
+  await db.ref('rooms/'+T.code+'/debrief/_class').set({text:$('classComment').value.trim(), by:T.uid, at:TS()});
+  $('classOut').textContent='✓ 저장됨'; setTimeout(()=>$('classOut').textContent='',2000);
+};
+/* CSV 내보내기 — 완주 리포트 (admin.html 열 구성과 정합) */
+$('btnExportCsv').onclick = ()=>{
+  const reps = Object.entries(T.studentsSnap).filter(([,s])=>s.status==='done' && s.report && s.report.total!=null);
+  if(!reps.length){ alert('완주한 학생이 없습니다.'); return; }
+  const head=['이름','상태','총점','등급','문제해결지수','처리','도착',...SKILL_ORDER,'제출시각'];
+  const lines=reps.map(([,s])=>{ const r=s.report, sk=r.skills||{};
+    return [r.name||s.name, SSLABEL[s.status]||'', r.total, r.grade, r.psScore!=null?r.psScore:'', r.doneCount||0, r.arrivedCount||0,
+      ...SKILL_ORDER.map(n=>sk[n]!=null?sk[n]:''), r.endedAt||''].map(csvEsc).join(','); });
+  dl('디브리프_'+T.code+'_'+new Date().toISOString().slice(0,10)+'.csv', head.join(',')+'\n'+lines.join('\n'), 'text/csv');
+};
+</script>
+</body>
+</html>

@@ -57,7 +57,18 @@ dialog::backdrop{background:rgba(10,15,26,.5)}
 .skillbar .bar{flex:1;height:8px;background:#eef1f6;border-radius:4px;overflow:hidden}
 .skillbar .fill{height:100%;background:linear-gradient(90deg,#4d7fe0,#8fb4ff)}
 .skillbar b{width:36px;text-align:right;font-family:var(--mono);font-size:12px}
+/* Firebase 강사 운영 섹션 — GAS 시스템과 시각적으로 구분(주황 액센트) */
+.fb-card{border-top:4px solid #f5820d}
+.fb-badge{font-size:11px;font-weight:800;background:#fff1e2;color:#a85a12;border-radius:5px;padding:2px 8px;margin-left:6px;vertical-align:middle}
+.fb-tabs{display:flex;gap:6px;border-bottom:2px solid var(--line);margin:16px 0 4px}
+.fb-tab{background:none;color:var(--sub);border-radius:8px 8px 0 0;padding:9px 18px;font-size:13px}
+.fb-tab.active{background:#fff1e2;color:#a85a12}
+code{font-family:var(--mono);font-size:12px;background:#f4f6fa;padding:1px 5px;border-radius:4px}
 </style>
+<!-- Firebase compat SDK (앱/인증/RTDB). GAS 기능과 무관하게 이 섹션에서만 사용. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 <header>
@@ -142,6 +153,64 @@ dialog::backdrop{background:rgba(10,15,26,.5)}
     <div class="scroll"><table id="rTable">
       <thead><tr><th>이름</th><th>그룹</th><th>부서</th><th>직급</th><th>조직문화</th><th>총점</th><th>등급</th><th>처리/도착</th><th>제출 시각</th></tr></thead>
       <tbody></tbody></table></div>
+  </div>
+</div>
+
+<!-- ===== Firebase 강사 운영 (RTDB) — 위 GAS 접속키/보고서 시스템과 완전 독립 ===== -->
+<div class="wrap" id="fbSection">
+  <div class="card fb-card">
+    <h2>🔥 Firebase 강사 운영 <span class="fb-badge">RTDB · GAS와 독립</span></h2>
+    <div class="note">위쪽 <b>접속키/보고서</b> 시스템(GAS·ADMIN_SECRET)과는 <b>완전히 별개</b>의 인증입니다.
+      teacher.html 강사 계정을 발급·관리하려면 Firebase <b>관리자 계정</b>으로 따로 로그인하세요.</div>
+
+    <!-- Firebase 관리자 로그인 블록 -->
+    <div id="fbLogin" style="margin-top:14px">
+      <div class="row">
+        <div><label>관리자 이메일</label><input id="fbEmail" type="email" style="width:240px" placeholder="admin@example.com"></div>
+        <div><label>비밀번호</label><input id="fbPw" type="password" style="width:180px"></div>
+        <button class="btn-p" id="fbBtnLogin" style="background:#f5820d">로그인</button>
+      </div>
+      <div class="note" id="fbLoginMsg">최초 1회는 Firebase 콘솔에서 관리자 계정 생성 + <code>/admins/{uid}=true</code> 시드가 필요합니다 (SETUP-teacher.md 참고).</div>
+    </div>
+
+    <!-- 콘솔(로그인 후) -->
+    <div id="fbConsole" class="hide">
+      <div style="display:flex;align-items:center;gap:10px;margin:6px 0 4px">
+        <span id="fbWho" style="font-size:12.5px;color:var(--sub)"></span>
+        <button class="btn-s" id="fbBtnLogout" style="margin-left:auto;padding:6px 12px;font-size:12px">로그아웃</button>
+      </div>
+      <div class="fb-tabs">
+        <button class="fb-tab active" data-tab="teachers">강사</button>
+        <button class="fb-tab" data-tab="rooms">방 · 사용량</button>
+      </div>
+
+      <!-- 강사 탭 -->
+      <div class="fb-pane" id="fbPaneTeachers">
+        <div class="row" style="margin-top:8px">
+          <div><label>강사 이메일</label><input id="fbTEmail" type="email" style="width:220px" placeholder="teacher@example.com"></div>
+          <div><label>표시 이름</label><input id="fbTName" style="width:140px" placeholder="예: 홍길동"></div>
+          <div><label>임시 비밀번호</label><input id="fbTPw" style="width:150px" placeholder="6자 이상"></div>
+          <button class="btn-g" id="fbBtnIssue">강사 발급</button>
+          <button class="btn-s" id="fbBtnReloadT">목록 새로고침</button>
+        </div>
+        <div class="note" id="fbIssueMsg">임시 비밀번호는 대면·메신저로 전달하고, 강사에게 첫 로그인 후 변경을 안내하세요.</div>
+        <div class="scroll" style="margin-top:12px"><table id="fbTTable">
+          <thead><tr><th>이메일</th><th>이름</th><th>상태</th><th>개설 방</th><th>UID</th><th></th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+
+      <!-- 방·사용량 탭 -->
+      <div class="fb-pane hide" id="fbPaneRooms">
+        <div class="row" style="margin-top:8px">
+          <button class="btn-s" id="fbBtnReloadR">새로고침</button>
+          <button class="btn-s" id="fbBtnRoomsCsv">CSV 다운로드</button>
+          <span id="fbRoomStats"></span>
+        </div>
+        <div class="scroll" style="margin-top:12px"><table id="fbRTable">
+          <thead><tr><th>코드</th><th>강사</th><th>상태</th><th>정원</th><th>입장</th><th>완주</th><th>개설</th><th></th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -358,6 +427,238 @@ $('btnRepJson').onclick = ()=>{
 
 /* 자동 로그인 */
 if(CFG.url && CFG.pw) $('btnLogin').click();
+</script>
+
+<script>
+/* ============================================================
+   Firebase 강사 운영 (RTDB) — 위 GAS(ADMIN_SECRET) 시스템과 완전 독립.
+   · 인증: Firebase Auth 이메일/비번(관리자) + /admins/{uid} 노드 존재 확인.
+   · 강사 발급: 세컨더리 앱(설계 §4 C방식)으로 계정 생성 → 주 인스턴스(admin 세션)로
+     /instructors/{uid} 승인 노드 기록 → 세컨더리 signOut + delete.
+     (세컨더리 앱을 써야 admin 로그인 세션이 풀리지 않는다.)
+   esc()/csvEsc()/dl()/$() 는 위 스크립트의 유틸을 그대로 재사용.
+   ============================================================ */
+const FIREBASE_CFG = {
+  apiKey: "AIzaSyCCYlmrWJgVIYx0pF3QdsHcoCcxBL3qDEM",
+  authDomain: "office-sim-2004f.firebaseapp.com",
+  databaseURL: "https://office-sim-2004f-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "office-sim-2004f",
+  storageBucket: "office-sim-2004f.firebasestorage.app",
+  messagingSenderId: "436118247639",
+  appId: "1:436118247639:web:cd8025be3d99d88588f892"
+};
+
+let fbApp=null, fbAuth=null, fbDB=null, fbAdminUid=null;
+let fbInstructors=[];   // {uid, email, displayName, status, roomCount}
+let fbRooms=[];         // {code, ownerName, status, capacity, enrolled, completed, createdAt}
+
+function fbReady(){
+  if(fbApp) return true;
+  if(typeof firebase==='undefined') return false;
+  fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CFG);
+  fbAuth = firebase.auth(); fbDB = firebase.database();
+  return true;
+}
+function fbErr(e){
+  const c=(e&&e.code)||'';
+  return ({'auth/invalid-credential':'이메일 또는 비밀번호가 올바르지 않습니다',
+    'auth/user-not-found':'등록되지 않은 계정','auth/wrong-password':'비밀번호가 틀렸습니다',
+    'auth/invalid-email':'이메일 형식 오류','auth/email-already-in-use':'이미 사용 중인 이메일입니다',
+    'auth/weak-password':'비밀번호는 6자 이상이어야 합니다',
+    'PERMISSION_DENIED':'권한 규칙에 막혔습니다'}[c] || (e&&e.message) || String(e));
+}
+function fbTime(ms){ if(!ms) return '—'; try{ return new Date(+ms).toISOString().slice(0,16).replace('T',' '); }catch(e){ return '—'; } }
+
+/* ---------- 관리자 로그인 (/admins/{uid} 확인) ---------- */
+async function fbDoLogin(){
+  const msg=$('fbLoginMsg');
+  if(!fbReady()){ msg.textContent='⚠ Firebase SDK 로드 실패 — 네트워크를 확인하세요.'; return; }
+  const email=$('fbEmail').value.trim(), pw=$('fbPw').value;
+  if(!email||!pw){ msg.textContent='이메일과 비밀번호를 입력하세요.'; return; }
+  msg.textContent='로그인 중…';
+  try{
+    const cred = await fbAuth.signInWithEmailAndPassword(email, pw);
+    const uid = cred.user.uid;
+    const snap = await fbDB.ref('admins/'+uid).once('value');
+    if(!snap.exists() || snap.val()===false){
+      await fbAuth.signOut();
+      msg.innerHTML='⚠ 관리자 권한이 없습니다. Firebase 콘솔에서 <code>/admins/'+esc(uid)+'</code> = true 를 시드하세요.';
+      return;
+    }
+    fbAdminUid=uid;
+    localStorage.setItem('fb_admin_email', email);
+    $('fbLogin').classList.add('hide'); $('fbConsole').classList.remove('hide');
+    $('fbWho').textContent='관리자: '+email;
+    msg.textContent='';
+    fbLoadInstructors();
+  }catch(e){ msg.textContent='⚠ 로그인 실패: '+fbErr(e); }
+}
+
+/* ---------- 강사 발급 (세컨더리 앱 C방식) ---------- */
+async function fbIssueTeacher(){
+  const msg=$('fbIssueMsg');
+  const email=$('fbTEmail').value.trim(), name=$('fbTName').value.trim(), pw=$('fbTPw').value;
+  if(!email||!pw){ msg.textContent='강사 이메일과 임시 비밀번호를 입력하세요.'; return; }
+  if(pw.length<6){ msg.textContent='임시 비밀번호는 6자 이상이어야 합니다.'; return; }
+  const btn=$('fbBtnIssue'); btn.disabled=true; btn.textContent='발급 중…'; msg.textContent='';
+  let secondary=null;
+  try{
+    /* 세컨더리 앱: 주(admin) 로그인 세션을 유지한 채 별도 인스턴스에서 계정 생성 */
+    secondary = firebase.initializeApp(FIREBASE_CFG, 'secondary');
+    const cred = await secondary.auth().createUserWithEmailAndPassword(email, pw);
+    const uid = cred.user.uid;
+    /* 주 인스턴스(admin 권한)로 승인 노드 기록 — /instructors 는 admin만 쓰기 가능 */
+    await fbDB.ref('instructors/'+uid).set({
+      email, displayName: name||email, status:'approved',
+      createdBy: fbAdminUid, createdAt: firebase.database.ServerValue.TIMESTAMP
+    });
+    await secondary.auth().signOut();
+    msg.innerHTML='✅ 발급 완료 — <b>'+esc(email)+'</b> (임시비번 <code>'+esc(pw)+'</code>). 강사에게 전달하고 첫 로그인 후 변경을 안내하세요.';
+    $('fbTEmail').value=''; $('fbTName').value=''; $('fbTPw').value='';
+    /* 목록 즉시 반영(규칙상 /instructors 전체 읽기가 막혀 있어도 방금 발급분은 보이게) */
+    fbInstructors = fbInstructors.filter(t=>t.uid!==uid);
+    fbInstructors.unshift({uid, email, displayName:name||email, status:'approved', roomCount:0});
+    fbRenderInstructors();
+    fbLoadInstructors();
+  }catch(e){ msg.textContent='⚠ 발급 실패: '+fbErr(e); }
+  finally{
+    if(secondary){ try{ await secondary.delete(); }catch(_){ } }
+    btn.disabled=false; btn.textContent='강사 발급';
+  }
+}
+
+/* ---------- 강사 목록 ---------- */
+async function fbLoadInstructors(){
+  const tb=$('fbTTable').querySelector('tbody');
+  tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#8b93a5;padding:18px">불러오는 중…</td></tr>';
+  try{
+    const snap = await fbDB.ref('instructors').once('value');
+    fbInstructors=[];
+    snap.forEach(ch=>{ const v=ch.val()||{};
+      fbInstructors.push({uid:ch.key, email:v.email||'', displayName:v.displayName||'',
+        status:v.status||'approved', roomCount: v.rooms? Object.keys(v.rooms).length : 0}); });
+    fbRenderInstructors();
+  }catch(e){
+    /* 설계 §5 규칙은 /instructors 전체 읽기를 관리자에게 열지 않는다(목록 조회 불가).
+       발급 자체는 정상. 목록·방 탭을 쓰려면 SETUP의 [선택] 관리자 목록 읽기 규칙 추가. */
+    if(fbInstructors.length){ fbRenderInstructors(); return; }
+    tb.innerHTML='<tr><td colspan="6" style="color:#8b93a5;padding:16px;line-height:1.75">'+
+      '강사 <b>목록</b>을 불러올 수 없습니다 ('+esc(fbErr(e))+').<br>'+
+      '기본 규칙(§5)은 <code>/instructors</code> 전체 읽기를 관리자에게 열지 않습니다. '+
+      '목록·방 탭을 쓰려면 <b>SETUP-teacher.md의 [선택] 관리자 목록 읽기 규칙</b>을 추가하세요. '+
+      '<b>강사 발급 자체는 규칙 추가 없이도 동작</b>합니다.</td></tr>';
+  }
+}
+function fbRenderInstructors(){
+  const tb=$('fbTTable').querySelector('tbody');
+  const STAT={approved:['승인','t-used'],suspended:['정지','t-revoked']};
+  tb.innerHTML = fbInstructors.map(t=>{
+    const s=STAT[t.status]||[t.status,'t-unused'];
+    const toggle = t.status==='approved'
+      ? '<button class="btn-s" style="padding:4px 10px;font-size:11px" onclick="fbToggle(\''+t.uid+'\',\'suspended\')">정지</button>'
+      : '<button class="btn-s" style="padding:4px 10px;font-size:11px" onclick="fbToggle(\''+t.uid+'\',\'approved\')">해제</button>';
+    return '<tr><td>'+esc(t.email)+'</td><td>'+esc(t.displayName)+'</td>'+
+      '<td><span class="tag '+s[1]+'">'+s[0]+'</span></td>'+
+      '<td class="mono">'+t.roomCount+'</td>'+
+      '<td class="mono" style="font-size:11px" title="'+esc(t.uid)+'">'+esc(String(t.uid).slice(0,12))+'…</td>'+
+      '<td>'+toggle+'</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#8b93a5;padding:18px">발급된 강사가 없습니다</td></tr>';
+}
+async function fbToggle(uid, to){
+  if(!confirm((to==='suspended'?'정지':'해제')+' 하시겠습니까?')) return;
+  try{
+    await fbDB.ref('instructors/'+uid+'/status').set(to);
+    const t=fbInstructors.find(x=>x.uid===uid); if(t) t.status=to;
+    fbRenderInstructors();
+  }catch(e){ alert('실패: '+fbErr(e)); }
+}
+
+/* ---------- 방·사용량 ---------- */
+async function fbLoadRooms(){
+  const tb=$('fbRTable').querySelector('tbody');
+  tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#8b93a5;padding:18px">불러오는 중…</td></tr>';
+  try{
+    let rooms=[];
+    try{
+      /* /rooms 전체 읽기 — 관리자 목록 읽기 규칙이 있을 때만 성공 */
+      const snap = await fbDB.ref('rooms').once('value');
+      snap.forEach(ch=>{ rooms.push(fbRoomRow(ch.key, (ch.val()||{}).meta||{})); });
+    }catch(e){
+      /* 폴백: 알려진 강사들의 rooms 인덱스 순회 → 각 meta read(auth!=null 허용) */
+      rooms = await fbRoomsViaIndex();
+    }
+    fbRooms=rooms; fbRenderRooms();
+  }catch(e){
+    tb.innerHTML='<tr><td colspan="8" style="color:#8b93a5;padding:16px">방 목록을 불러올 수 없습니다 ('+esc(fbErr(e))+'). SETUP-teacher.md의 [선택] 관리자 목록 읽기 규칙을 참고하세요.</td></tr>';
+  }
+}
+function fbRoomRow(code, m){
+  return {code, ownerName:m.ownerName||m.owner||'', status:m.status||'',
+    capacity:m.capacity!=null?m.capacity:'', enrolled:m.enrolled||0, completed:m.completed||0, createdAt:m.createdAt||''};
+}
+async function fbRoomsViaIndex(){
+  const out=[];
+  for(const t of fbInstructors){
+    let idx;
+    try{ idx = await fbDB.ref('instructors/'+t.uid+'/rooms').once('value'); }catch(_){ continue; }
+    if(!idx.exists()) continue;
+    for(const code of Object.keys(idx.val()||{})){
+      try{ const ms=await fbDB.ref('rooms/'+code+'/meta').once('value'); if(ms.exists()) out.push(fbRoomRow(code, ms.val())); }catch(_){ }
+    }
+  }
+  return out;
+}
+function fbRenderRooms(){
+  const tb=$('fbRTable').querySelector('tbody');
+  const SN={waiting:['대기','t-unused'],live:['진행','t-active'],ended:['종료','t-revoked']};
+  const live=fbRooms.filter(r=>r.status==='live').length;
+  const enr=fbRooms.reduce((a,r)=>a+(+r.enrolled||0),0);
+  $('fbRoomStats').innerHTML='<span class="stat">방 <b>'+fbRooms.length+'</b></span><span class="stat">진행 <b>'+live+'</b></span><span class="stat">누적 입장 <b>'+enr+'</b></span>';
+  tb.innerHTML = fbRooms.map(r=>{
+    const s=SN[r.status]||[r.status||'—','t-unused'];
+    const end = r.status!=='ended' ? '<button class="btn-s" style="padding:4px 10px;font-size:11px" onclick="fbForceEnd(\''+r.code+'\')">강제 종료</button>':'';
+    return '<tr><td class="mono"><b>'+esc(r.code)+'</b></td><td>'+esc(r.ownerName)+'</td>'+
+      '<td><span class="tag '+s[1]+'">'+s[0]+'</span></td>'+
+      '<td class="mono">'+(r.capacity===0?'무제한':esc(r.capacity))+'</td>'+
+      '<td class="mono">'+r.enrolled+'</td><td class="mono">'+r.completed+'</td>'+
+      '<td class="mono" style="font-size:11px">'+fbTime(r.createdAt)+'</td>'+
+      '<td>'+end+'</td></tr>';
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:#8b93a5;padding:18px">방이 없습니다</td></tr>';
+}
+async function fbForceEnd(code){
+  if(!confirm(code+' 방을 강제 종료할까요? (meta.status = ended)')) return;
+  try{ await fbDB.ref('rooms/'+code+'/meta/status').set('ended'); fbLoadRooms(); }
+  catch(e){ alert('실패: '+fbErr(e)); }
+}
+
+/* ---------- 배선 ---------- */
+document.querySelectorAll('.fb-tab').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.fb-tab').forEach(x=>x.classList.toggle('active', x===b));
+    const t=b.dataset.tab;
+    $('fbPaneTeachers').classList.toggle('hide', t!=='teachers');
+    $('fbPaneRooms').classList.toggle('hide', t!=='rooms');
+    if(t==='rooms') fbLoadRooms();
+  };
+});
+$('fbBtnLogin').onclick=fbDoLogin;
+$('fbPw').addEventListener('keydown', e=>{ if(e.key==='Enter') fbDoLogin(); });
+$('fbBtnLogout').onclick=async ()=>{
+  try{ if(fbAuth) await fbAuth.signOut(); }catch(_){ }
+  fbAdminUid=null; fbInstructors=[]; fbRooms=[];
+  $('fbConsole').classList.add('hide'); $('fbLogin').classList.remove('hide');
+};
+$('fbBtnIssue').onclick=fbIssueTeacher;
+$('fbBtnReloadT').onclick=fbLoadInstructors;
+$('fbBtnReloadR').onclick=fbLoadRooms;
+$('fbBtnRoomsCsv').onclick=()=>{
+  if(!fbRooms.length){ alert('내보낼 방이 없습니다'); return; }
+  const head=['코드','강사','상태','정원','입장','완주','개설시각'];
+  const lines=fbRooms.map(r=>[r.code,r.ownerName,r.status,r.capacity,r.enrolled,r.completed,fbTime(r.createdAt)].map(csvEsc).join(','));
+  dl('firebase_방사용량_'+new Date().toISOString().slice(0,10)+'.csv', head.join(',')+'\n'+lines.join('\n'), 'text/csv');
+};
+$('fbEmail').value = localStorage.getItem('fb_admin_email')||'';
+window.fbToggle=fbToggle; window.fbForceEnd=fbForceEnd;
 </script>
 </body>
 </html>
