@@ -7601,7 +7601,17 @@ init3D();
     if(cap!==0 && enr>=cap) return {ok:false, error:'정원이 초과된 세션입니다.'};
     const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
     const isNew = !(await stuRef.once('value')).exists();
+    const owner = meta.owner;
     if(isNew){
+      /* 크레딧 하드 게이트: 신규 입장 시에만 강사 spent+1 (보안규칙 spent+1<=balance 게이팅).
+         .transaction 사용(경합 시 정당 학생 헛거부 방지). 실패(잔액초과·경합소진·규칙거부)=입장 거부 — 절대 swallow 금지 */
+      try{
+        const res = await FB.db.ref('credits/'+owner+'/spent').transaction(n => (n==null?0:n)+1);
+        if(!res.committed) throw 0;
+      }catch(e){
+        return {ok:false, error:'이 수업의 정원이 마감되었습니다. (강사에게 문의하세요)'};
+      }
+      /* 크레딧 게이트 통과 후에만 enrolled 카운트 증가 (enrolled 실패는 기존대로 삼킴) */
       try{ await metaRef.child('enrolled').transaction(n => (n||0)+1); }catch(e){}
     }
     G.mode = 'firebase';

@@ -53,6 +53,13 @@ tr:hover td{background:#f8faff}
 .stat{display:inline-block;background:#f4f6fa;border-radius:9px;padding:8px 14px;margin:0 8px 8px 0;font-size:12.5px}
 .stat b{font-family:var(--mono)}
 .scroll{max-height:520px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+/* 크레딧 잔액 배너 (강사 read-only 표시) */
+.credit-banner{background:linear-gradient(90deg,var(--navy),var(--blue));color:#fff;border-radius:12px;
+  padding:15px 22px;margin-bottom:16px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.credit-banner .big{font-size:27px;font-weight:800;font-family:var(--mono)}
+.credit-banner .sub{font-size:13px;font-weight:700;color:#cfdaf2}
+.credit-warn{background:#fdecea;color:var(--bad);border:1.5px solid #f3c2bd;border-radius:10px;
+  padding:11px 16px;margin-bottom:14px;font-size:13px;font-weight:700}
 /* tabs */
 .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .tabs button{background:#e8edf6;color:#31456f}
@@ -133,6 +140,8 @@ ul.rlist{margin-left:18px;font-size:13px;line-height:1.8}
 <!-- ===== 방 목록 ===== -->
 <div class="wrap hide" id="roomsView">
   <div class="card">
+    <div id="creditBanner" class="credit-banner"><span class="big">잔여 —</span><span class="sub">크레딧 정보를 불러오는 중…</span></div>
+    <div id="creditWarn" class="credit-warn hide"></div>
     <h2>방(수업) 만들기</h2>
     <div class="row">
       <div><label>직급 트랙</label><select id="cpRank" style="width:150px">
@@ -144,6 +153,7 @@ ul.rlist{margin-left:18px;font-size:13px;line-height:1.8}
       <div><label>조직문화</label><select id="cpCult" style="width:130px">
         <option value="">학생 선택</option><option value="v">수직적</option><option value="h">수평적</option></select></div>
       <div><label>정원 (0=무제한)</label><input id="cpCap" type="number" value="30" min="0" max="300" style="width:130px"></div>
+      <div><label>학교/그룹명</label><input id="cpGroup" type="text" placeholder="예: 조선대학교 3학년" style="width:200px"></div>
       <button class="btn-p" id="btnCreate">방 개설</button>
     </div>
     <div class="note">개설하면 6자리 참가코드가 생성됩니다. 학생은 index 화면에서 이 코드로 입장합니다.
@@ -265,7 +275,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
 
 /* ===================== 앱 상태 ===================== */
 const T = {
-  uid:null, email:null, instructor:null,
+  uid:null, email:null, instructor:null, credits:null,
   code:null, meta:null,               // 현재 열람 중인 방
   studentsSnap:{},                    // sid -> student node (라이브 모니터 구독 결과)
   monRef:null,                        // 구독 중인 students ref (해제용)
@@ -357,9 +367,34 @@ function showRooms(){
   show('roomsView');
 }
 
+/* ===================== 크레딧 잔액 (강사 read-only) ===================== */
+/* credits/{uid}={balance,spent}. 강사는 자기 원장 read만 가능(규칙 auth.uid===$uid).
+   write는 관리자 전용이므로 여기서는 절대 쓰지 않는다. 없으면 0/0 취급. */
+async function loadCredits(){
+  const banner=$('creditBanner'), warn=$('creditWarn');
+  if(!banner) return;
+  let bal=0, spent=0;
+  try{
+    // READ: /credits/{uid}
+    const c=(await db.ref('credits/'+T.uid).once('value')).val()||{};
+    bal=+c.balance||0; spent=+c.spent||0;
+  }catch(e){ /* read 거부 시 0/0 표시 */ }
+  T.credits={balance:bal, spent:spent};
+  const remain=bal-spent;
+  banner.innerHTML='<span class="big">잔여 '+remain+'</span>'+
+    '<span class="sub">구매 '+bal+' · 사용 '+spent+'</span>';
+  if(remain<=0){
+    warn.textContent='잔여 크레딧 0 — 학생이 입장할 수 없습니다. 관리자에게 충전을 요청하세요.';
+    warn.classList.remove('hide');
+  }else{
+    warn.classList.add('hide');
+  }
+}
+
 /* ===================== 방 목록 ===================== */
 $('btnRoomsRefresh').onclick = loadRooms;
 async function loadRooms(){
+  loadCredits();   // 방 목록 새로고침·방 생성 시 잔여 크레딧 동반 갱신
   $('roomsEmpty').textContent = '불러오는 중…';
   // READ: /instructors/{uid}/rooms (코드 인덱스)
   let idxCodes = [];
@@ -381,10 +416,11 @@ async function loadRooms(){
   $('roomTable').querySelector('tbody').innerHTML = mine.map(({code,meta})=>{
     const p = meta.preset||{};
     const cfg = [RN[p.rank],DN[p.dept],CN[p.cult]].filter(Boolean).join('·') || '학생 선택';
+    const grp = meta.group ? '<b>'+esc(meta.group)+'</b> · ' : '';
     const cap = meta.capacity ? meta.capacity : '무제한';
     return '<tr><td class="mono"><b>'+esc(code)+'</b></td>'+
       '<td><span class="tag '+(STCLASS[meta.status]||'')+'">'+(STLABEL[meta.status]||esc(meta.status))+'</span></td>'+
-      '<td style="font-size:12px">'+cfg+'</td>'+
+      '<td style="font-size:12px">'+grp+cfg+'</td>'+
       '<td class="mono">'+cap+'</td><td class="mono">'+(meta.enrolled||0)+'</td><td class="mono">'+(meta.completed||0)+'</td>'+
       '<td class="mono">'+fmtTime(meta.createdAt)+'</td>'+
       '<td><button class="btn-p btn-xs" onclick="openRoom(\''+code+'\')">열기</button></td></tr>';
@@ -404,7 +440,8 @@ $('btnCreate').onclick = async ()=>{
     // WRITE: /rooms/{code}/meta
     await db.ref('rooms/'+code+'/meta').set({
       owner: T.uid, ownerName: (T.instructor.displayName||T.email||''),
-      status:'waiting', preset, capacity, enrolled:0, completed:0,
+      status:'waiting', preset, capacity, group:$('cpGroup').value.trim(),
+      enrolled:0, completed:0,
       createdAt: TS(), expiry: Date.now() + 12*3600*1000
     });
     // WRITE: /rooms/{code}/private/aiKey — 강사 라이선스 키를 방에 상속(참가 학생만 read).
@@ -454,7 +491,7 @@ function renderRoomHeader(){
   const m=T.meta||{}, p=m.preset||{};
   $('rvStatus').innerHTML = '<span class="tag '+(STCLASS[m.status]||'')+'">'+(STLABEL[m.status]||'')+'</span>';
   const cfg=[RN[p.rank],DN[p.dept],CN[p.cult]].filter(Boolean).join('·')||'학생 선택';
-  $('rvMeta').textContent = cfg + ' · 정원 '+(m.capacity?m.capacity:'무제한')+' · 입장 '+(m.enrolled||0)+' · 완주 '+(m.completed||0);
+  $('rvMeta').textContent = (m.group? m.group+' · ':'') + cfg + ' · 정원 '+(m.capacity?m.capacity:'무제한')+' · 입장 '+(m.enrolled||0)+' · 완주 '+(m.completed||0);
   $('btnStart').disabled = (m.status==='ended');
   $('btnStart').textContent = (m.status==='waiting')?'시작':'재시작';
 }
