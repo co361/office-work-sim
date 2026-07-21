@@ -598,15 +598,7 @@
         </div>
         <div class="ws-chev">⌄</div>
       </div>
-      <div class="ws-row">
-        <div class="ws-rowmain">
-          <div class="ws-label">라이선스 키.</div>
-          <input id="kKey" class="ws-input" maxlength="24" placeholder="접속 키 (예: EDU-AB12-CD34)" style="font-family:var(--mono);display:none">
-          <div id="kNote" style="font-size:12.5px;color:#e0a13c;line-height:1.5;margin-top:4px;display:none"></div>
-        </div>
-        <div class="ws-chev">⌄</div>
-      </div>
-      <!-- ===== 세션코드 입장 (firebase 실시간 수업 — additive) ===== -->
+      <!-- ===== 세션코드 입장 (firebase 실시간 수업) ===== -->
       <div class="ws-row" id="fbRow" style="flex-direction:column;align-items:stretch">
         <div class="ws-rowmain" style="width:100%">
           <div class="ws-label">세션코드 입장.</div>
@@ -615,7 +607,7 @@
             <button id="fbJoin" type="button" style="padding:0 18px;white-space:nowrap;border-radius:8px;border:1px solid #3a5fbf;background:#2f4fa0;color:#eaf1ff;font-size:13px;cursor:pointer">입장</button>
           </div>
           <div id="fbNote" style="font-size:12.5px;line-height:1.5;margin-top:6px;display:none"></div>
-          <div style="font-size:11px;color:#9aa3b4;line-height:1.5;margin-top:5px">강사에게 받은 <b>6자리 숫자</b> 코드로 실시간 수업에 입장합니다 · 접속 키(EDU-…)는 위 <b>라이선스 키</b> 칸에 입력하세요.</div>
+          <div style="font-size:11px;color:#9aa3b4;line-height:1.5;margin-top:5px">강사에게 받은 <b>6자리 숫자</b> 코드로 실시간 수업에 입장합니다.</div>
         </div>
       </div>
       <div id="pickWait" style="display:none;font-size:12.5px;line-height:1.65;padding:14px 0">
@@ -4232,10 +4224,9 @@ function buildStart(){
 }
 function checkReady(){
   const nm = $('pName').value.trim();
-  const keyOk = G.mode==='firebase' || !BACKEND_URL || $('kKey').value.trim().length>=6 || G.testKey;
+  const keyOk = (G.mode==='firebase') || G.testKey || !BACKEND_URL;
   $('btnStart').disabled = !(G.dept && G.cult && G.rank && nm.length>=2 && keyOk);
 }
-let _keyTimer = null;
 const PICK_DEFS = [
   ['rankGrid','rank', v=>G.rank=v, k=>RANKS[k]],
   ['deptGrid','dept', v=>G.dept=v, k=>DEPTS[k]],
@@ -4259,45 +4250,12 @@ function setPicksFromConfig(cfg){
   $('pickWait').style.display = (cfg===null && BACKEND_URL) ? 'block' : 'none';
   checkReady();
 }
-function applyKeyConfig(cfg, msg, isError){
-  setPicksFromConfig(isError ? null : (cfg||{}));
-  const kn = $('kNote');
-  const locked = [];
-  cfg = cfg||{};
-  if(cfg.rank && RANKS[cfg.rank]) locked.push('직급: '+RANKS[cfg.rank].name);
-  if(cfg.dept && DEPTS[cfg.dept]) locked.push('부서: '+DEPTS[cfg.dept].name);
-  if(cfg.cult && CULTURES[cfg.cult]) locked.push('조직문화: '+CULTURES[cfg.cult].name);
-  kn.style.display = msg ? 'block' : 'none';
-  kn.style.color = isError ? 'var(--warn)' : '#7fd6a4';
-  kn.textContent = (isError?'⚠ ':'✓ ') + msg + (locked.length? ' — 진행자 지정: '+locked.join(' · ') : '');
-}
-async function checkKeyConfig(){
-  const key = $('kKey').value.trim().toUpperCase();
-  if(TEST_KEYS.includes(key)){
-    G.testKey = true;
-    applyKeyConfig({}, '테스트 키 확인 — 모든 선택지 개방 · 보고서는 서버 전송 없이 로컬 저장');
-    return;
-  }
-  G.testKey = false;
-  if(key.length < 8){ setPicksFromConfig(null); $('kNote').style.display='none'; return; }
-  try{
-    const r = await api({action:'check', key});
-    if(!r.ok){ applyKeyConfig({}, r.error||'키 확인 실패', true); return; }
-    applyKeyConfig(r.config||{}, '키 확인됨'+(r.group?' · '+r.group:''));
-    if(r.group && !$('pSchool').value.trim()) $('pSchool').value = r.group;   // 소속 자동 프리필(수정 가능)
-  }catch(e){ /* 네트워크 오류 시 출근 시점에 재확인 */ }
-}
 if(BACKEND_URL){
-  $('kKey').style.display='inline-block';
-  setPicksFromConfig(null);   // 키 확인 전에는 어떤 선택지도 노출하지 않음
-  $('kKey').addEventListener('input', ()=>{
-    checkReady();
-    clearTimeout(_keyTimer); _keyTimer = setTimeout(checkKeyConfig, 500);
-  });
+  setPicksFromConfig(null);   // 세션코드 조인 전에는 어떤 선택지도 노출하지 않음
 } else {
   const badge = document.createElement('div');
   badge.style.cssText = 'margin-top:10px;font-size:12px;color:#e0a13c';
-  badge.textContent = '⚙ 로컬 테스트 모드 — 모든 선택지가 열려 있습니다. 배포(키 인증) 시에는 키를 입력해야 선택 항목이 표시되고, 강사가 지정한 항목은 자동 확정됩니다.';
+  badge.textContent = '⚙ 로컬 테스트 모드 — 모든 선택지가 열려 있습니다. 실시간 수업은 강사에게 받은 세션코드로 입장하세요.';
   $('pIssued').parentElement.after(badge);
 }
 $('pName').addEventListener('input', ()=>{
@@ -4312,31 +4270,8 @@ $('pName').addEventListener('input', ()=>{
 async function startGame(){
   const D = DEPTS[G.dept];
   const nm = $('pName').value.trim();
-  if(BACKEND_URL && G.mode!=='firebase'){   /* firebase(세션코드) 모드는 GAS 키 redeem을 건너뜀 — 접속키 경로 무변경 */
-    const key = $('kKey').value.trim().toUpperCase();
-    const btn = $('btnStart'), kn = $('kNote');
-    if(TEST_KEYS.includes(key)){
-      G.accessKey = ''; G.keyGroup = 'TEST'; // 서버 미전송
-    } else {
-      btn.disabled = true; btn.textContent = '접속 키 확인 중…';
-      try{
-        const r = await api({action:'redeem', key, name:nm});
-        if(!r.ok){
-          applyKeyConfig({}, r.error||'키 인증에 실패했습니다.', true);
-          btn.disabled=false; btn.textContent='출근하기'; return;
-        }
-        G.accessKey = key; G.keyGroup = r.group||'';
-        const c = r.config||{};   // 서버 설정이 최종 우선
-        if(c.rank && RANKS[c.rank]) G.rank = c.rank;
-        if(c.dept && DEPTS[c.dept]) G.dept = c.dept;
-        if(c.cult && CULTURES[c.cult]) G.cult = c.cult;
-      }catch(e){
-        applyKeyConfig({}, '서버에 연결할 수 없습니다. 네트워크를 확인하거나 진행자에게 문의하세요.', true);
-        btn.disabled=false; btn.textContent='출근하기'; return;
-      }
-      btn.textContent = '출근하기';
-    }
-  }
+  /* firebase(세션코드) 모드는 강사 방에서 AI 키를 상속받고, 데모/로컬은 규칙 기반 폴백으로 동작한다.
+     별도의 라이선스 키 redeem 단계는 없다. */
   G.player = {name:nm, school:($('pSchool').value.trim() || G.keyGroup || ''), phone:$('pPhone').value.trim(),
               ext:(G.playerDraft||{ext:'02-6301-0412'}).ext, email:(G.playerDraft||{email:'works412@works.co.kr'}).email};
   G.items = [...D.items.map(i=>({...i})), ...commonItems(), ...rankItems(G.rank)];
@@ -4865,7 +4800,7 @@ ${plain.slice(0,1800)}
 [플레이어 질문] ${q}
 박선임의 답변만 출력하라.`;
   if(BACKEND_URL){                                       // 배포 환경: GAS 프록시 경유 (API 키는 서버에)
-    const r = await api({action:'ai', purpose:'chat', key:G.accessKey||'', prompt});
+    const r = await api({action:'ai', purpose:'chat', key:(G.aiKey||G.accessKey||''), prompt});
     if(r.ok && r.text) return r.text.trim();
     throw r.error || 'backend-ai-unavailable';
   }
@@ -6838,7 +6773,7 @@ function withTimeout(p, ms){
 /* ----- 공용 AI 호출 (프록시 우선, 로컬은 직접 시도 → 호출부에서 폴백) ----- */
 async function callAI(purpose, prompt){
   if(BACKEND_URL){
-    const r = await api({action:'ai', purpose, key:G.accessKey||'', prompt});
+    const r = await api({action:'ai', purpose, key:(G.aiKey||G.accessKey||''), prompt});
     if(r.ok && r.text) return r.text.trim();
     throw r.error || 'ai-unavailable';
   }
@@ -7042,7 +6977,7 @@ ${text}
   const prompt = sysPrefix + '\n' + userBody;   // 레거시(하위호환): 구 Code.gs는 이 prompt만 사용
   let raw;
   if(BACKEND_URL){                                       // 배포 환경: GAS 프록시 경유 (실 AI 첨삭)
-    const r = await api({action:'ai', purpose:'grade', key:G.accessKey||'', prompt, sysPrefix, userBody});
+    const r = await api({action:'ai', purpose:'grade', key:(G.aiKey||G.accessKey||''), prompt, sysPrefix, userBody});
     if(!r.ok || !r.text) throw r.error || 'backend-ai-unavailable';
     raw = r.text;
   } else {
@@ -7594,6 +7529,19 @@ $('btnCloseReport').onclick = ()=>{ $('report').style.display='none'; };
 /* ===== 초기화 ===== */
 ['composeBox','workBox'].forEach(id=>$('stash').appendChild($(id)));
 buildStart();
+/* 데모/솔로 진입: ?demo=1 — 서버 미연동, 전 선택지 개방, 규칙 기반 채점(오프라인 폴백) */
+(function(){
+  const _demo = new URLSearchParams(location.search).has('demo');
+  if(!_demo) return;
+  G.testKey = true;
+  setPicksFromConfig({});                       // 전 선택지 개방
+  const fbRow = $('fbRow'); if(fbRow) fbRow.style.display='none';   // 세션코드 행 숨김
+  const badge = document.createElement('div');
+  badge.style.cssText = 'margin-top:10px;font-size:12px;color:#e0a13c';
+  badge.textContent = '🧪 데모 모드 — 서버 미연동, 규칙 기반 채점';
+  $('pIssued').parentElement.after(badge);
+  checkReady();
+})();
 init3D();
 </script>
 <!-- =====================================================================
@@ -7667,6 +7615,11 @@ init3D();
     const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
     const TS = firebase.database.ServerValue.TIMESTAMP;
     await stuRef.update({ name:String(name||'').slice(0,20), joinedAt:TS, online:true, lastSeen:TS, status:'playing' });
+    /* 학생 노드 write 이후에만 방 private AI 키를 읽을 수 있음(규칙). 실패 시 오프라인 폴백 */
+    try{
+      const k = (await FB.db.ref('rooms/'+code+'/private/aiKey').once('value')).val();
+      if(k) G.aiKey = String(k);
+    }catch(e){ /* 키 없거나 규칙 거부 → 오프라인 폴백 */ }
     try{ stuRef.onDisconnect().update({ online:false, lastSeen:TS }); }catch(e){}
     if(G.fb.hb) clearInterval(G.fb.hb);
     G.fb.hb = setInterval(()=>{ try{ stuRef.child('lastSeen').set(firebase.database.ServerValue.TIMESTAMP); }catch(e){} }, 25000);
@@ -7763,7 +7716,6 @@ init3D();
       /* preset(rank/dept/cult)를 기존 config 주입 경로로 그대로 재사용 — 선택지 숨김+자동확정 */
       const p = r.preset||{};
       if(typeof setPicksFromConfig==='function') setPicksFromConfig({rank:p.rank, dept:p.dept, cult:p.cult});
-      if(typeof applyKeyConfig==='function') applyKeyConfig({rank:p.rank, dept:p.dept, cult:p.cult}, '세션코드 확인됨 — 강사 설정 적용', false);
       await fbRegister(nm);
       const ready = (p.rank && RANKS[p.rank]) && (p.dept && DEPTS[p.dept]) && (p.cult && CULTURES[p.cult]);
       if(ready){
@@ -7786,17 +7738,6 @@ init3D();
     if(codeEl){
       codeEl.addEventListener('input', ()=>{ codeEl.value = codeEl.value.replace(/\D/g,'').slice(0,6); });
       codeEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); fbDoJoin(); } });
-    }
-    /* 자동판별(additive): 기존 kKey 입력에 6자리 숫자가 들어오면 세션코드 입장 안내 (기존 리스너 유지) */
-    const kk=$('kKey');
-    if(kk){
-      kk.addEventListener('input', ()=>{
-        const v=kk.value.trim();
-        if(fbIsCode(v)){
-          const codeEl=$('fbCode'); if(codeEl && !codeEl.value) codeEl.value=v;
-          fbNoteMsg('6자리 숫자는 세션코드입니다 — 아래 [입장] 버튼으로 실시간 수업에 참여하세요.', false);
-        }
-      });
     }
   }
 })();
