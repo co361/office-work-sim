@@ -65,6 +65,15 @@ dialog::backdrop{background:rgba(10,15,26,.5)}
 .fb-tab{background:none;color:var(--sub);border-radius:8px 8px 0 0;padding:9px 18px;font-size:13px}
 .fb-tab.active{background:#fff1e2;color:#a85a12}
 code{font-family:var(--mono);font-size:12px;background:#f4f6fa;padding:1px 5px;border-radius:4px}
+/* 고급·레거시(GAS) 접이식 컨테이너 — 평소엔 눈에 안 띄게 (회색·작게) */
+#gasLegacy{max-width:1080px;margin:0 auto;padding:0 18px}
+#gasLegacy>summary{cursor:pointer;color:#7a8496;font-size:12.5px;font-weight:700;list-style:none;
+  padding:11px 16px;background:#f1f3f7;border:1px solid var(--line);border-radius:10px;margin-top:6px;user-select:none}
+#gasLegacy>summary::-webkit-details-marker{display:none}
+#gasLegacy>summary::before{content:'▸ ';color:#aab2c0}
+#gasLegacy[open]>summary::before{content:'▾ '}
+#gasLegacy>summary:hover{background:#e9edf4;color:#5b6474}
+#gasLegacy #login{margin:16px auto 0}
 </style>
 <!-- Firebase compat SDK (앱/인증/RTDB). GAS 기능과 무관하게 이 섹션에서만 사용. -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -76,6 +85,66 @@ code{font-family:var(--mono);font-size:12px;background:#f4f6fa;padding:1px 5px;b
   <h1>🗂 업무 시뮬레이션 관리자</h1><span class="sub">edmakers 교육 운영 콘솔</span>
   <span class="right" id="hdInfo"></span>
 </header>
+
+<!-- ===== [주 인터페이스] Firebase 강사 운영 — 승인 · 크레딧 · 집계 ===== -->
+<div class="wrap" id="fbSection">
+  <div class="card fb-card">
+    <h2>강사 승인 · 크레딧 충전 · 사용 집계 <span class="fb-badge">Firebase 운영 콘솔</span></h2>
+    <div class="note">강사 <b>승인</b> · <b>크레딧 충전</b> · <b>사용 집계</b>를 관리합니다.
+      강사는 <b>강사 페이지(teacher.html)</b>에서 직접 <b>가입 신청</b>하며, 여기서 승인합니다.</div>
+
+    <!-- Firebase 관리자 로그인 블록 -->
+    <div id="fbLogin" style="margin-top:14px">
+      <div class="row">
+        <div><label>관리자 이메일</label><input id="fbEmail" type="email" style="width:240px" placeholder="admin@example.com"></div>
+        <div><label>비밀번호</label><input id="fbPw" type="password" style="width:180px"></div>
+        <button class="btn-p" id="fbBtnLogin" style="background:#f5820d">로그인</button>
+      </div>
+      <div class="note" id="fbLoginMsg">최초 1회만 로그인하면 이후 자동 유지됩니다. (관리자 계정 생성 + <code>/admins/{uid}=true</code> 시드 필요 — SETUP-teacher.md 참고)</div>
+    </div>
+
+    <!-- 콘솔(로그인 후) -->
+    <div id="fbConsole" class="hide">
+      <div style="display:flex;align-items:center;gap:10px;margin:6px 0 4px">
+        <span id="fbWho" style="font-size:12.5px;color:var(--sub)"></span>
+        <button class="btn-s" id="fbBtnLogout" style="margin-left:auto;padding:6px 12px;font-size:12px">로그아웃</button>
+      </div>
+      <div class="fb-tabs">
+        <button class="fb-tab active" data-tab="teachers">강사</button>
+        <button class="fb-tab" data-tab="rooms">방 · 사용량</button>
+      </div>
+
+      <!-- 강사 탭 -->
+      <div class="fb-pane" id="fbPaneTeachers">
+        <div class="row" style="margin-top:8px">
+          <button class="btn-s" id="fbBtnReloadT">목록 새로고침</button>
+        </div>
+        <div class="note" id="fbGuideMsg">강사는 강사 페이지에서 직접 <b>가입 신청</b>합니다. 아래 목록에서 <b>[승인+키지급]</b> 하세요. (<a href="teacher.html" target="_blank" style="color:var(--blue)">teacher.html 열기</a>)<br>
+          AI 키는 <b>아래 ⚙ 고급·레거시 → ① AI 접속키 발급</b>에서 만들 수 있습니다. 없으면 비워두면 오프라인 채점.</div>
+        <div id="fbCreditSummary" style="margin-top:10px"></div>
+        <div class="scroll" style="margin-top:12px"><table id="fbTTable">
+          <thead><tr><th>이메일</th><th>이름</th><th>상태</th><th>AI키</th><th>크레딧(구매·사용·잔여)</th><th>개설 방</th><th>UID</th><th></th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+
+      <!-- 방·사용량 탭 -->
+      <div class="fb-pane hide" id="fbPaneRooms">
+        <div class="row" style="margin-top:8px">
+          <button class="btn-s" id="fbBtnReloadR">새로고침</button>
+          <button class="btn-s" id="fbBtnRoomsCsv">CSV 다운로드</button>
+          <span id="fbRoomStats"></span>
+        </div>
+        <div class="scroll" style="margin-top:12px"><table id="fbRTable">
+          <thead><tr><th>코드</th><th>강사</th><th>상태</th><th>정원</th><th>입장</th><th>완주</th><th>개설</th><th></th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== [고급 · 레거시] GAS 접속키 · 보고서 시스템 (기본 접힘) ===== -->
+<details id="gasLegacy">
+  <summary>⚙ 고급 · 레거시 — AI 접속키 발급 · 키 현황 · 성과 보고서 (GAS)</summary>
 
 <!-- ===== 로그인 ===== -->
 <div class="wrap" id="login">
@@ -157,66 +226,7 @@ code{font-family:var(--mono);font-size:12px;background:#f4f6fa;padding:1px 5px;b
       <tbody></tbody></table></div>
   </div>
 </div>
-
-<!-- ===== Firebase 강사 운영 (RTDB) — 위 GAS 접속키/보고서 시스템과 완전 독립 ===== -->
-<div class="wrap" id="fbSection">
-  <div class="card fb-card">
-    <h2>🔥 Firebase 강사 운영 <span class="fb-badge">RTDB · GAS와 독립</span></h2>
-    <div class="note">위쪽 <b>접속키/보고서</b> 시스템(GAS·ADMIN_SECRET)과는 <b>완전히 별개</b>의 인증입니다.
-      teacher.html 강사 계정을 발급·관리하려면 Firebase <b>관리자 계정</b>으로 따로 로그인하세요.</div>
-
-    <!-- Firebase 관리자 로그인 블록 -->
-    <div id="fbLogin" style="margin-top:14px">
-      <div class="row">
-        <div><label>관리자 이메일</label><input id="fbEmail" type="email" style="width:240px" placeholder="admin@example.com"></div>
-        <div><label>비밀번호</label><input id="fbPw" type="password" style="width:180px"></div>
-        <button class="btn-p" id="fbBtnLogin" style="background:#f5820d">로그인</button>
-      </div>
-      <div class="note" id="fbLoginMsg">최초 1회는 Firebase 콘솔에서 관리자 계정 생성 + <code>/admins/{uid}=true</code> 시드가 필요합니다 (SETUP-teacher.md 참고).</div>
-    </div>
-
-    <!-- 콘솔(로그인 후) -->
-    <div id="fbConsole" class="hide">
-      <div style="display:flex;align-items:center;gap:10px;margin:6px 0 4px">
-        <span id="fbWho" style="font-size:12.5px;color:var(--sub)"></span>
-        <button class="btn-s" id="fbBtnLogout" style="margin-left:auto;padding:6px 12px;font-size:12px">로그아웃</button>
-      </div>
-      <div class="fb-tabs">
-        <button class="fb-tab active" data-tab="teachers">강사</button>
-        <button class="fb-tab" data-tab="rooms">방 · 사용량</button>
-      </div>
-
-      <!-- 강사 탭 -->
-      <div class="fb-pane" id="fbPaneTeachers">
-        <div class="row" style="margin-top:8px">
-          <div><label>강사 이메일</label><input id="fbTEmail" type="email" style="width:220px" placeholder="teacher@example.com"></div>
-          <div><label>표시 이름</label><input id="fbTName" style="width:140px" placeholder="예: 홍길동"></div>
-          <div><label>임시 비밀번호</label><input id="fbTPw" style="width:150px" placeholder="6자 이상"></div>
-          <div><label>AI 키(선택)</label><input id="fbTKey" style="width:180px" placeholder="EDU-… (없으면 비워둠)"></div>
-          <button class="btn-g" id="fbBtnIssue">강사 발급</button>
-          <button class="btn-s" id="fbBtnReloadT">목록 새로고침</button>
-        </div>
-        <div class="note" id="fbIssueMsg">임시 비밀번호는 대면·메신저로 전달하고, 강사에게 첫 로그인 후 변경을 안내하세요.</div>
-        <div id="fbCreditSummary" style="margin-top:10px"></div>
-        <div class="scroll" style="margin-top:12px"><table id="fbTTable">
-          <thead><tr><th>이메일</th><th>이름</th><th>상태</th><th>AI키</th><th>크레딧(구매·사용·잔여)</th><th>개설 방</th><th>UID</th><th></th></tr></thead>
-          <tbody></tbody></table></div>
-      </div>
-
-      <!-- 방·사용량 탭 -->
-      <div class="fb-pane hide" id="fbPaneRooms">
-        <div class="row" style="margin-top:8px">
-          <button class="btn-s" id="fbBtnReloadR">새로고침</button>
-          <button class="btn-s" id="fbBtnRoomsCsv">CSV 다운로드</button>
-          <span id="fbRoomStats"></span>
-        </div>
-        <div class="scroll" style="margin-top:12px"><table id="fbRTable">
-          <thead><tr><th>코드</th><th>강사</th><th>상태</th><th>정원</th><th>입장</th><th>완주</th><th>개설</th><th></th></tr></thead>
-          <tbody></tbody></table></div>
-      </div>
-    </div>
-  </div>
-</div>
+</details>
 
 <footer style="text-align:center;font-size:11px;color:#9aa3b5;line-height:1.6;padding:22px 26px 30px">© 2026 edmakers. 본 프로그램의 무단 복제·배포·2차 이용을 금합니다. 인가된 라이선스 하에서만 이용할 수 있습니다.</footer>
 
@@ -473,7 +483,7 @@ function fbErr(e){
 }
 function fbTime(ms){ if(!ms) return '—'; try{ return new Date(+ms).toISOString().slice(0,16).replace('T',' '); }catch(e){ return '—'; } }
 
-/* ---------- 관리자 로그인 (/admins/{uid} 확인) ---------- */
+/* ---------- 관리자 로그인 (signIn만 — 권한확인·화면전환·목록로딩은 onAuthStateChanged가 담당) ---------- */
 async function fbDoLogin(){
   const msg=$('fbLoginMsg');
   if(!fbReady()){ msg.textContent='⚠ Firebase SDK 로드 실패 — 네트워크를 확인하세요.'; return; }
@@ -481,56 +491,47 @@ async function fbDoLogin(){
   if(!email||!pw){ msg.textContent='이메일과 비밀번호를 입력하세요.'; return; }
   msg.textContent='로그인 중…';
   try{
-    const cred = await fbAuth.signInWithEmailAndPassword(email, pw);
-    const uid = cred.user.uid;
-    const snap = await fbDB.ref('admins/'+uid).once('value');
-    if(!snap.exists() || snap.val()===false){
-      await fbAuth.signOut();
-      msg.innerHTML='⚠ 관리자 권한이 없습니다. Firebase 콘솔에서 <code>/admins/'+esc(uid)+'</code> = true 를 시드하세요.';
-      return;
-    }
-    fbAdminUid=uid;
-    localStorage.setItem('fb_admin_email', email);
-    $('fbLogin').classList.add('hide'); $('fbConsole').classList.remove('hide');
-    $('fbWho').textContent='관리자: '+email;
-    msg.textContent='';
-    fbLoadInstructors();
+    await fbAuth.signInWithEmailAndPassword(email, pw);
+    /* 성공 후 처리(권한확인·화면전환·fbLoadInstructors)는 fbInit의 onAuthStateChanged 한 곳에서 (중복 로딩 방지) */
   }catch(e){ msg.textContent='⚠ 로그인 실패: '+fbErr(e); }
 }
-
-/* ---------- 강사 발급 (세컨더리 앱 C방식) ---------- */
-async function fbIssueTeacher(){
-  const msg=$('fbIssueMsg');
-  const email=$('fbTEmail').value.trim(), name=$('fbTName').value.trim(), pw=$('fbTPw').value;
-  const key=$('fbTKey').value.trim();
-  if(!email||!pw){ msg.textContent='강사 이메일과 임시 비밀번호를 입력하세요.'; return; }
-  if(pw.length<6){ msg.textContent='임시 비밀번호는 6자 이상이어야 합니다.'; return; }
-  const btn=$('fbBtnIssue'); btn.disabled=true; btn.textContent='발급 중…'; msg.textContent='';
-  let secondary=null;
-  try{
-    /* 세컨더리 앱: 주(admin) 로그인 세션을 유지한 채 별도 인스턴스에서 계정 생성 */
-    secondary = firebase.initializeApp(FIREBASE_CFG, 'secondary');
-    const cred = await secondary.auth().createUserWithEmailAndPassword(email, pw);
-    const uid = cred.user.uid;
-    /* 주 인스턴스(admin 권한)로 승인 노드 기록 — /instructors 는 admin만 쓰기 가능 */
-    const rec={ email, displayName: name||email, status:'approved',
-      createdBy: fbAdminUid, createdAt: firebase.database.ServerValue.TIMESTAMP };
-    if(key) rec.licenseKey=key;
-    await fbDB.ref('instructors/'+uid).set(rec);
-    await secondary.auth().signOut();
-    msg.innerHTML='✅ 발급 완료 — <b>'+esc(email)+'</b> (임시비번 <code>'+esc(pw)+'</code>)'+(key?' + AI키 지급됨':'')+'. 강사에게 전달하고 첫 로그인 후 변경을 안내하세요.';
-    $('fbTEmail').value=''; $('fbTName').value=''; $('fbTPw').value=''; $('fbTKey').value='';
-    /* 목록 즉시 반영(규칙상 /instructors 전체 읽기가 막혀 있어도 방금 발급분은 보이게) */
-    fbInstructors = fbInstructors.filter(t=>t.uid!==uid);
-    fbInstructors.unshift({uid, email, displayName:name||email, status:'approved', licenseKey:key||'', roomCount:0});
-    fbRenderInstructors();
-    fbLoadInstructors();
-  }catch(e){ msg.textContent='⚠ 발급 실패: '+fbErr(e); }
-  finally{
-    if(secondary){ try{ await secondary.delete(); }catch(_){ } }
-    btn.disabled=false; btn.textContent='강사 발급';
-  }
+/* ---------- 화면 전환 헬퍼 ---------- */
+function fbShowConsole(email){
+  $('fbLogin').classList.add('hide'); $('fbConsole').classList.remove('hide');
+  $('fbWho').textContent='관리자: '+(email||'');
 }
+function fbShowLogin(){
+  $('fbConsole').classList.add('hide'); $('fbLogin').classList.remove('hide');
+}
+/* ---------- ★ 세션 자동 복원 — 최초 1회 로그인 후 새로고침·재방문 시 자동 콘솔 진입 ----------
+   Firebase Auth compat 세션은 기본 LOCAL 지속이지만 복원 핸들러가 없으면 폼이 다시 떠서
+   매번 재로그인처럼 느껴졌다. onAuthStateChanged로 세션을 감지해 /admins/{uid} 확인 후
+   콘솔을 자동 표시(1회 로딩). 로그아웃 시엔 null로 다시 불려 폼으로 복귀. */
+function fbInit(){
+  if(!fbReady()){ const m=$('fbLoginMsg'); if(m) m.textContent='⚠ Firebase SDK 로드 실패 — 네트워크를 확인하세요.'; return; }
+  try{ fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(_){ }
+  fbAuth.onAuthStateChanged(async user=>{
+    if(!user){ fbAdminUid=null; fbShowLogin(); return; }
+    try{
+      const snap = await fbDB.ref('admins/'+user.uid).once('value');
+      if(!snap.exists() || snap.val()===false){
+        const uid=user.uid;
+        await fbAuth.signOut();   // 비관리자 → 로그아웃(→ onAuthStateChanged(null)이 폼 복귀)
+        fbAdminUid=null;
+        const m=$('fbLoginMsg'); if(m) m.innerHTML='⚠ 관리자 권한이 없습니다. Firebase 콘솔에서 <code>/admins/'+esc(uid)+'</code> = true 를 시드하세요.';
+        return;
+      }
+      fbAdminUid=user.uid;
+      localStorage.setItem('fb_admin_email', user.email||'');
+      const m=$('fbLoginMsg'); if(m) m.textContent='';
+      fbShowConsole(user.email);
+      fbLoadInstructors();   // 콘솔 진입 시 1회 로딩
+    }catch(e){ fbShowLogin(); }
+  });
+}
+
+/* 강사 직접 발급(구 fbIssueTeacher)은 제거됨 — 강사는 teacher.html에서 셀프 가입 후
+   아래 목록에서 [승인+키지급](fbApproveWithKey)으로 승인·키지급한다. */
 
 /* ---------- 강사 목록 ---------- */
 async function fbLoadInstructors(){
@@ -758,11 +759,10 @@ document.querySelectorAll('.fb-tab').forEach(b=>{
 $('fbBtnLogin').onclick=fbDoLogin;
 $('fbPw').addEventListener('keydown', e=>{ if(e.key==='Enter') fbDoLogin(); });
 $('fbBtnLogout').onclick=async ()=>{
+  fbInstructors=[]; fbRooms=[];
   try{ if(fbAuth) await fbAuth.signOut(); }catch(_){ }
-  fbAdminUid=null; fbInstructors=[]; fbRooms=[];
-  $('fbConsole').classList.add('hide'); $('fbLogin').classList.remove('hide');
+  /* 화면 전환(폼 복귀)은 onAuthStateChanged(null)이 담당 */
 };
-$('fbBtnIssue').onclick=fbIssueTeacher;
 $('fbBtnReloadT').onclick=fbLoadInstructors;
 $('fbBtnReloadR').onclick=fbLoadRooms;
 $('fbBtnRoomsCsv').onclick=()=>{
@@ -775,6 +775,9 @@ $('fbEmail').value = localStorage.getItem('fb_admin_email')||'';
 window.fbToggle=fbToggle; window.fbForceEnd=fbForceEnd;
 window.fbApproveWithKey=fbApproveWithKey; window.fbChangeKey=fbChangeKey; window.fbRevokeKey=fbRevokeKey;
 window.fbTopupCredit=fbTopupCredit;
+
+/* ★ 세션 자동 복원 시작 — 로그인 상태면 콘솔 자동 진입, 아니면 로그인 폼 유지 */
+fbInit();
 </script>
 </body>
 </html>
