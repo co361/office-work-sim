@@ -336,12 +336,33 @@ $('btnSignup').onclick = async ()=>{
 };
 
 /* 인증 상태 → 강사 승인 확인 */
+/* auto-provision 재진입 가드: 특정 uid에 대해 노드 자동생성을 최초 1회만 시도.
+   (DB write는 onAuthStateChanged를 재발화시키지 않지만, 토큰 갱신 등으로 재진입해도
+    중복 set·무한 재시도가 없도록 이 uid 플래그로 차단.) */
+let provisionedUid = null;
 auth.onAuthStateChanged(async user=>{
   if(!user){ show('login'); T.uid=null; return; }
   T.uid = user.uid; T.email = user.email;
   // READ: /instructors/{uid}
   let inst=null;
   try{ inst = (await db.ref('instructors/'+user.uid).once('value')).val(); }catch(e){ inst=null; }
+  // AUTO-PROVISION: Auth 계정은 있으나 instructors 노드가 없는 경우(null)에 한해 최초 1회 노드 생성.
+  //  · 관리자(admins/{uid}===true) → status:'approved' 로 생성(규칙상 관리자는 전체 write 허용).
+  //  · 일반 강사 → status:'pending' 으로 생성(자기 uid 최초 pending+licenseKey 없음만 규칙 통과).
+  //  노드가 이미 존재하면(pending/approved/suspended) 절대 손대지 않음.
+  if(!inst && provisionedUid !== user.uid){
+    provisionedUid = user.uid;                       // 이 uid는 한 번만 시도(재진입/중복 set 방지)
+    let isAdmin=false;
+    try{ isAdmin = (await db.ref('admins/'+user.uid).once('value')).val()===true; }catch(e){ isAdmin=false; }
+    const node = isAdmin
+      ? { email:user.email, displayName:(user.email||'강사'), status:'approved', createdAt: TS() }
+      : { email:user.email, displayName:(user.email||'강사'), status:'pending',  createdAt: TS() };
+    try{
+      // WRITE: /instructors/{uid} (최초 1회) — 이후 방금 쓴 값을 다시 read해 T.instructor 채움
+      await db.ref('instructors/'+user.uid).set(node);
+      inst = (await db.ref('instructors/'+user.uid).once('value')).val() || node;
+    }catch(e){ /* 생성 거부 시 아래 로직에서 승인 대기 화면으로 안내 */ }
+  }
   T.instructor = inst;
   if(!inst || inst.status!=='approved'){
     $('lockTitle').textContent = (inst && inst.status==='suspended') ? '계정 정지됨' : '승인 대기 중';
