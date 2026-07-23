@@ -311,12 +311,18 @@ function showSignupForm(){ $('loginCard').classList.add('hide'); $('signupCard')
 function showLoginForm(){ $('signupCard').classList.add('hide'); $('loginCard').classList.remove('hide'); }
 $('lnkToSignup').onclick = e=>{ e.preventDefault(); showSignupForm(); };
 $('lnkToLogin').onclick  = e=>{ e.preventDefault(); showLoginForm(); };
+/* 가입 진행 플래그: createUserWithEmailAndPassword 는 즉시 로그인 상태를 만들어
+   onAuthStateChanged 자동 프로비저닝(이메일만 담긴 노드 set)을 유발한다.
+   가입 write(이름·소속·연락처 포함)와 경쟁하면 강사 정보가 유실될 수 있으므로,
+   가입 세션 동안에는 자동 프로비저닝을 건너뛰게 한다. */
+let signingUp = false;
 $('btnSignup').onclick = async ()=>{
   const email=$('suEmail').value.trim(), pw=$('suPw').value,
         name=$('suName').value.trim(), org=$('suOrg').value.trim(), phone=$('suPhone').value.trim();
   if(!email || !pw || !name || !org){ $('signupMsg').textContent='이메일·비밀번호·이름·소속을 모두 입력하세요.'; return; }
   if(pw.length<6){ $('signupMsg').textContent='비밀번호는 6자 이상이어야 합니다.'; return; }
   $('btnSignup').disabled=true; $('signupMsg').textContent='가입 신청 중…';
+  signingUp = true;   // 이 세션의 자동 프로비저닝 차단(아래 onAuthStateChanged 참조)
   try{
     // Auth 계정 생성 → 자기 uid에 최초 1회 self-write(status:pending, licenseKey 없음: 규칙 통과)
     const cred = await auth.createUserWithEmailAndPassword(email, pw);
@@ -332,7 +338,7 @@ $('btnSignup').onclick = async ()=>{
     $('loginMsg').textContent='가입 신청이 접수되었습니다. 관리자 승인 후 이 계정으로 로그인하세요.';
   }catch(e){
     $('signupMsg').textContent='⚠ 가입 실패: '+(e.code||e.message||e);
-  }finally{ $('btnSignup').disabled=false; }
+  }finally{ $('btnSignup').disabled=false; signingUp=false; }
 };
 
 /* 인증 상태 → 강사 승인 확인 */
@@ -350,7 +356,10 @@ auth.onAuthStateChanged(async user=>{
   //  · 관리자(admins/{uid}===true) → status:'approved' 로 생성(규칙상 관리자는 전체 write 허용).
   //  · 일반 강사 → status:'pending' 으로 생성(자기 uid 최초 pending+licenseKey 없음만 규칙 통과).
   //  노드가 이미 존재하면(pending/approved/suspended) 절대 손대지 않음.
-  if(!inst && provisionedUid !== user.uid){
+  //  가입 진행 중(signingUp)이면 btnSignup 이 이름·소속·연락처 포함 노드를 직접 쓰므로
+  //  여기서 이메일만 담긴 노드로 덮어쓰지 않도록 건너뛴다(경쟁상태 방지).
+  //  정상 재로그인(가입 아님)에서는 signingUp=false 이므로 프로비저닝이 그대로 동작한다.
+  if(!inst && !signingUp && provisionedUid !== user.uid){
     provisionedUid = user.uid;                       // 이 uid는 한 번만 시도(재진입/중복 set 방지)
     let isAdmin=false;
     try{ isAdmin = (await db.ref('admins/'+user.uid).once('value')).val()===true; }catch(e){ isAdmin=false; }
@@ -457,6 +466,15 @@ $('btnCreate').onclick = async ()=>{
   try{
     const preset = { rank:$('cpRank').value, dept:$('cpDept').value, cult:$('cpCult').value };
     const capacity = Math.max(0, +$('cpCap').value||0);
+    // 크레딧 잔액 대비 정원 경고(하드 차단 아님 — 초과분은 입장 시 하드캡으로 막힘).
+    // 잔여 크레딧 = balance-spent (loadCredits가 채운 T.credits). confirm 취소 시 finally가 버튼 복구.
+    const cr = T.credits || {balance:0, spent:0};
+    const remain = (+cr.balance||0) - (+cr.spent||0);
+    if(remain<=0){
+      if(!confirm('⚠ 잔여 크레딧이 0입니다.\n지금 방을 개설해도 관리자가 크레딧을 충전하기 전에는 학생이 한 명도 입장할 수 없습니다.\n그래도 개설할까요?')) return;
+    }else if(capacity>0 && capacity>remain){
+      if(!confirm('잔여 크레딧 '+remain+'개인데 정원을 '+capacity+'명으로 설정했습니다.\n크레딧이 부족하면 '+remain+'명까지만 입장할 수 있습니다.\n계속할까요?')) return;
+    }
     const code = await genCode();
     // WRITE: /rooms/{code}/meta
     await db.ref('rooms/'+code+'/meta').set({

@@ -122,6 +122,7 @@ code{font-family:var(--mono);font-size:12px;background:#f4f6fa;padding:1px 5px;b
         <div class="note" id="fbGuideMsg">강사는 강사 페이지에서 직접 <b>가입 신청</b>합니다. 아래 목록에서 <b>[승인+키지급]</b> 하세요. (<a href="teacher.html" target="_blank" style="color:var(--blue)">teacher.html 열기</a>)<br>
           AI 키는 <b>아래 ⚙ 고급·레거시 → ① AI 접속키 발급</b>에서 만들 수 있습니다. 없으면 비워두면 오프라인 채점.</div>
         <div id="fbCreditSummary" style="margin-top:10px"></div>
+        <div id="fbReconcile" style="margin-top:14px"></div>
         <div class="scroll" style="margin-top:12px"><table id="fbTTable">
           <thead><tr><th>이메일</th><th>이름</th><th>상태</th><th>AI키</th><th>크레딧(구매·사용·잔여)</th><th>개설 방</th><th>UID</th><th></th></tr></thead>
           <tbody></tbody></table></div>
@@ -464,7 +465,8 @@ const FIREBASE_CFG = {
 
 let fbApp=null, fbAuth=null, fbDB=null, fbAdminUid=null;
 let fbInstructors=[];   // {uid, email, displayName, status, roomCount}
-let fbRooms=[];         // {code, ownerName, status, capacity, enrolled, completed, createdAt}
+let fbRooms=[];         // {code, owner, ownerName, status, capacity, enrolled, completed, createdAt}
+let fbRoomsLoaded=false;// 대조표(사용 vs 입장)용 — 방 데이터가 한 번이라도 로드됐는지
 
 function fbReady(){
   if(fbApp) return true;
@@ -547,15 +549,16 @@ async function fbLoadInstructors(){
         credit:{balance:0, spent:0}}); });
     await fbLoadCredits();
     fbRenderInstructors();
+    // 대조표(사용 vs 실제 입장)를 채우려면 방 데이터가 필요 — 아직 없으면 백그라운드 로드
+    if(!fbRoomsLoaded) fbLoadRooms();
   }catch(e){
-    /* 설계 §5 규칙은 /instructors 전체 읽기를 관리자에게 열지 않는다(목록 조회 불가).
-       발급 자체는 정상. 목록·방 탭을 쓰려면 SETUP의 [선택] 관리자 목록 읽기 규칙 추가. */
+    /* 배포 규칙(firebase/database.rules.json)의 instructors 최상위 .read 는
+       auth != null && admins/{auth.uid} 존재 → 관리자에게 /instructors 전체 읽기가 열려 있다.
+       따라서 여기로 오면 "규칙이 안 열림"이 아니라 실제 실패(로그인 만료·규칙 미게시·네트워크)다. */
     if(fbInstructors.length){ fbRenderInstructors(); return; }
     tb.innerHTML='<tr><td colspan="8" style="color:#8b93a5;padding:16px;line-height:1.75">'+
-      '강사 <b>목록</b>을 불러올 수 없습니다 ('+esc(fbErr(e))+').<br>'+
-      '기본 규칙(§5)은 <code>/instructors</code> 전체 읽기를 관리자에게 열지 않습니다. '+
-      '목록·방 탭을 쓰려면 <b>SETUP-teacher.md의 [선택] 관리자 목록 읽기 규칙</b>을 추가하세요. '+
-      '<b>강사 발급 자체는 규칙 추가 없이도 동작</b>합니다.</td></tr>';
+      '강사 <b>목록</b>을 불러오지 못했습니다 ('+esc(fbErr(e))+').<br>'+
+      '<b>로그인 상태(관리자 세션)</b> 또는 <b>보안 규칙 게시 여부</b>를 확인하세요.</td></tr>';
   }
 }
 /* 강사별 크레딧 원장 credits/{uid} = {balance(누적구매), spent(누적사용)} 병렬 read.
@@ -618,6 +621,47 @@ function fbRenderInstructors(){
       '<td class="mono" style="font-size:11px" title="'+esc(t.uid)+'">'+esc(String(t.uid).slice(0,12))+'…</td>'+
       '<td>'+acts+'</td></tr>';
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:#8b93a5;padding:18px">발급된 강사가 없습니다</td></tr>';
+  fbRenderReconcile();
+}
+/* ---------- 과소계상 대조 뷰: 강사별 [구매 / 사용 spent / 실제 입장합계 Σenrolled / 불일치] ----------
+   spent(사용)은 학생 1명 입장당 규칙상 +1 차감된다. 강사가 소유한 방들(meta.owner===uid)의
+   enrolled 합계와 대조해, 크게 어긋나면(부정확한 차감/집계 이상) 대표가 바로 인지하도록 강조한다.
+   방 목록(fbRooms)이 로드돼야 계산 가능 — 미로드 시 안내만 표시. */
+function fbRenderReconcile(){
+  const box=$('fbReconcile'); if(!box) return;
+  if(!fbInstructors.length){ box.innerHTML=''; return; }
+  if(!fbRoomsLoaded){
+    box.innerHTML='<div class="note">강사별 <b>사용 크레딧 vs 실제 입장</b> 대조표는 방 데이터를 불러온 뒤 표시됩니다…</div>';
+    return;
+  }
+  const BIG=5;   // 이 값 이상 어긋나면 "불일치"로 강조
+  const enrByOwner={};
+  fbRooms.forEach(r=>{ const o=r.owner||''; if(!o) return; enrByOwner[o]=(enrByOwner[o]||0)+(+r.enrolled||0); });
+  const rows=fbInstructors.map(t=>{
+    const cr=t.credit||{balance:0,spent:0};
+    const bal=+cr.balance||0, spent=+cr.spent||0, enr=enrByOwner[t.uid]||0;
+    return {t, bal, spent, enr, diff:spent-enr};
+  }).filter(r=> r.bal||r.spent||r.enr );   // 활동 없는 강사는 대조표에서 숨김
+  if(!rows.length){ box.innerHTML='<div class="note">아직 크레딧·입장 활동이 있는 강사가 없습니다.</div>'; return; }
+  const anyBig=rows.some(r=>Math.abs(r.diff)>=BIG);
+  const trs=rows.map(r=>{
+    const big=Math.abs(r.diff)>=BIG, mism=r.diff!==0;
+    const diffTxt=(r.diff>0?'+':'')+r.diff;
+    const flag = !mism ? '<span class="tag t-used">일치</span>'
+      : (big ? '<span class="tag t-revoked">불일치 '+diffTxt+'</span>'
+             : '<span class="tag t-active">차이 '+diffTxt+'</span>');
+    return '<tr'+(big?' style="background:#fff6f5"':'')+'>'+
+      '<td>'+esc(r.t.email)+'</td><td>'+esc(r.t.displayName)+'</td>'+
+      '<td class="mono">'+r.bal+'</td><td class="mono">'+r.spent+'</td>'+
+      '<td class="mono">'+r.enr+'</td><td>'+flag+'</td></tr>';
+  }).join('');
+  box.innerHTML=
+    '<h4 style="font-size:13px;margin:2px 0 6px;color:#a85a12">사용 크레딧 vs 실제 입장 대조 '+
+      (anyBig?'<span class="tag t-revoked" style="margin-left:6px">불일치 감지</span>'
+             :'<span class="tag t-used" style="margin-left:6px">이상 없음</span>')+'</h4>'+
+    '<div class="note" style="margin:0 0 6px">사용(spent)은 학생 1명 입장당 1씩 차감됩니다. 강사가 소유한 방들의 입장 합계(Σ입장)와 '+BIG+' 이상 어긋나면 강조 표시합니다. (입장 후 이탈 시 입장 합계가 줄어 자연스러운 소폭 차이는 있을 수 있습니다.)</div>'+
+    '<div class="scroll" style="max-height:300px"><table><thead><tr><th>이메일</th><th>이름</th><th>구매</th><th>사용(spent)</th><th>Σ입장</th><th>대조</th></tr></thead>'+
+    '<tbody>'+trs+'</tbody></table></div>';
 }
 async function fbApproveWithKey(uid){
   const key = prompt('이 강사에게 지급할 AI 접속키(라이선스 키)를 입력하세요.\n(예: EDU-XXXX… 형식. 비워두면 승인만 하고 키는 나중에 지급)');
@@ -702,13 +746,13 @@ async function fbLoadRooms(){
       /* 폴백: 알려진 강사들의 rooms 인덱스 순회 → 각 meta read(auth!=null 허용) */
       rooms = await fbRoomsViaIndex();
     }
-    fbRooms=rooms; fbRenderRooms();
+    fbRooms=rooms; fbRoomsLoaded=true; fbRenderRooms();
   }catch(e){
     tb.innerHTML='<tr><td colspan="8" style="color:#8b93a5;padding:16px">방 목록을 불러올 수 없습니다 ('+esc(fbErr(e))+'). SETUP-teacher.md의 [선택] 관리자 목록 읽기 규칙을 참고하세요.</td></tr>';
   }
 }
 function fbRoomRow(code, m){
-  return {code, ownerName:m.ownerName||m.owner||'', status:m.status||'',
+  return {code, owner:m.owner||'', ownerName:m.ownerName||m.owner||'', status:m.status||'',
     capacity:m.capacity!=null?m.capacity:'', enrolled:m.enrolled||0, completed:m.completed||0, createdAt:m.createdAt||''};
 }
 async function fbRoomsViaIndex(){
@@ -739,6 +783,7 @@ function fbRenderRooms(){
       '<td class="mono" style="font-size:11px">'+fbTime(r.createdAt)+'</td>'+
       '<td>'+end+'</td></tr>';
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:#8b93a5;padding:18px">방이 없습니다</td></tr>';
+  fbRenderReconcile();   // 방 데이터가 채워졌으니 대조표도 갱신
 }
 async function fbForceEnd(code){
   if(!confirm(code+' 방을 강제 종료할까요? (meta.status = ended)')) return;
