@@ -7605,7 +7605,11 @@ init3D();
     const cap = +meta.capacity||0, enr = +meta.enrolled||0;
     if(cap!==0 && enr>=cap) return {ok:false, error:'정원이 초과된 세션입니다.'};
     const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
-    const isNew = !(await stuRef.once('value')).exists();   /* 노드 생성 "전"에 판정해야 함 */
+    const stuSnap = (await stuRef.once('value'));           /* 노드 생성 "전"에 한 번만 읽는다 */
+    const isNew = !stuSnap.exists();
+    /* 이미 완주한 학생인가 — fbRegister가 status를 'playing'으로 되돌리지 않게 하는 근거.
+       여기서 같이 캡처해 추가 읽기 0을 유지한다(fbRegister는 이 직후 1회만 호출됨). */
+    const wasDone = ((stuSnap.val()||{}).status === 'done');
     const owner = meta.owner;
     if(isNew){
       /* 과금 순서 반전(이중과금 방지): ① 학생노드(신원)를 먼저 생성한다.
@@ -7634,7 +7638,7 @@ init3D();
       try{ await metaRef.child('enrolled').transaction(n => (n||0)+1); }catch(e){}
     }
     G.mode = 'firebase';
-    G.fb = { code, sid, preset: meta.preset||{}, joined:false, isNew };
+    G.fb = { code, sid, preset: meta.preset||{}, joined:false, isNew, wasDone };
     return {ok:true, preset: meta.preset||{}, isNew};
   }
 
@@ -7643,7 +7647,12 @@ init3D();
     const {code, sid} = G.fb;
     const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
     const TS = firebase.database.ServerValue.TIMESTAMP;
-    await stuRef.update({ name:String(name||'').slice(0,20), joinedAt:TS, online:true, lastSeen:TS, status:'playing' });
+    /* 완주(status==='done')한 학생이 새로고침해도 'playing'으로 되돌리지 않는다.
+       되돌리면 강사 모니터의 done 집계가 줄고 syncCompleted가 meta/completed를 낮춰 써서
+       완주 카운터가 감소한다(구 트랜잭션은 단조증가였다). 완주는 되돌아가지 않는 기록이다. */
+    const upd = { name:String(name||'').slice(0,20), joinedAt:TS, online:true, lastSeen:TS };
+    if(!G.fb.wasDone) upd.status = 'playing';
+    await stuRef.update(upd);
     /* 학생 노드 write 이후에만 방 private AI 키를 읽을 수 있음(규칙). 실패 시 오프라인 폴백 */
     try{
       const k = (await FB.db.ref('rooms/'+code+'/private/aiKey').once('value')).val();

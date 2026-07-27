@@ -278,6 +278,7 @@ const T = {
   uid:null, email:null, instructor:null, credits:null,
   code:null, meta:null,               // 현재 열람 중인 방
   studentsSnap:{},                    // sid -> student node (라이브 모니터 구독 결과)
+  studentsLoaded:false,               // students 첫 스냅샷이 도착했는가 (syncCompleted 가드)
   monRef:null,                        // 구독 중인 students ref (해제용)
   selSid:null,                        // 상호작용 대상 학생
   dbSid:null,                         // 디브리프에서 선택한 학생
@@ -393,7 +394,7 @@ function show(which){
 }
 function showRooms(){
   if(T.monRef){ T.monRef.off(); T.monRef=null; }
-  T.code=null; T.meta=null; T.studentsSnap={};
+  T.code=null; T.meta=null; T.studentsSnap={}; T.studentsLoaded=false;
   show('roomsView');
 }
 
@@ -562,11 +563,12 @@ function switchTab(name){
 /* ===================== 라이브 모니터 ===================== */
 function subscribeStudents(){
   if(T.monRef){ T.monRef.off(); }
-  T.studentsSnap = {};
+  T.studentsSnap = {}; T.studentsLoaded = false;
   // READ(실시간): /rooms/{code}/students on value
   T.monRef = db.ref('rooms/'+T.code+'/students');
   T.monRef.on('value', snap=>{
     T.studentsSnap = snap.val() || {};
+    T.studentsLoaded = true;
     renderMonitor();
     renderMsgTargets();
     if(!$('tab-debrief').classList.contains('hide')){ renderDebriefPicker(); renderSummary(); }
@@ -580,6 +582,9 @@ function isOnline(s){ return s.online===true && s.lastSeen && (Date.now()-s.last
    남의 방도 가능) 여는 대신, 이미 students를 구독 중인 소유 강사가 집계값을 되쓴다. */
 function syncCompleted(done){
   if(!T.code || !T.meta || T.meta.owner!==T.uid) return;
+  /* 첫 스냅샷 도착 전에는 쓰지 않는다 — studentsSnap이 {}인 채로 8초 프레즌스 타이머가
+     먼저 돌면(구독 지연·err 콜백) done=0으로 서버 카운터를 0으로 덮어쓴다. */
+  if(!T.studentsLoaded) return;
   if((T.meta.completed||0) === done) return;          // 변화 없으면 쓰지 않음(쓰기 낭비 방지)
   T.meta.completed = done;                            // 로컬 즉시 반영 → 방 헤더가 바로 갱신
   // WRITE: /rooms/{code}/meta/completed (소유 강사 권한)
