@@ -279,6 +279,7 @@ const T = {
   code:null, meta:null,               // 현재 열람 중인 방
   studentsSnap:{},                    // sid -> student node (라이브 모니터 구독 결과)
   studentsLoaded:false,               // students 첫 스냅샷이 도착했는가 (syncCompleted 가드)
+  studentsErr:null,                   // students 구독 실패 메시지 (프레즌스 타이머가 못 덮게 보관)
   monRef:null,                        // 구독 중인 students ref (해제용)
   selSid:null,                        // 상호작용 대상 학생
   dbSid:null,                         // 디브리프에서 선택한 학생
@@ -394,7 +395,7 @@ function show(which){
 }
 function showRooms(){
   if(T.monRef){ T.monRef.off(); T.monRef=null; }
-  T.code=null; T.meta=null; T.studentsSnap={}; T.studentsLoaded=false;
+  T.code=null; T.meta=null; T.studentsSnap={}; T.studentsLoaded=false; T.studentsErr=null;
   show('roomsView');
 }
 
@@ -563,16 +564,22 @@ function switchTab(name){
 /* ===================== 라이브 모니터 ===================== */
 function subscribeStudents(){
   if(T.monRef){ T.monRef.off(); }
-  T.studentsSnap = {}; T.studentsLoaded = false;
+  T.studentsSnap = {}; T.studentsLoaded = false; T.studentsErr = null;
   // READ(실시간): /rooms/{code}/students on value
   T.monRef = db.ref('rooms/'+T.code+'/students');
   T.monRef.on('value', snap=>{
     T.studentsSnap = snap.val() || {};
     T.studentsLoaded = true;
+    T.studentsErr = null;                             // 복구됨 — 경고 해제
     renderMonitor();
     renderMsgTargets();
     if(!$('tab-debrief').classList.contains('hide')){ renderDebriefPicker(); renderSummary(); }
-  }, err=>{ $('monEmpty').textContent = '학생 데이터 구독 실패: '+(err.code||err.message||err); });
+  }, err=>{
+    /* 구독이 죽으면 완주 카운터 동기화도 조용히 영구 중단된다(studentsLoaded가 false로 남음).
+       강사에게 남는 유일한 신호가 이 문구이므로 보관해서 8초 프레즌스 타이머가 못 덮게 한다. */
+    T.studentsErr = '학생 데이터 구독 실패: '+(err.code||err.message||err)+' — 방을 다시 열어보세요.';
+    $('monEmpty').textContent = T.studentsErr;
+  });
 }
 function isOnline(s){ return s.online===true && s.lastSeen && (Date.now()-s.lastSeen) < PRESENCE_MS; }
 
@@ -597,7 +604,8 @@ function renderMonitor(){
   const done = entries.filter(([,s])=>s.status==='done').length;
   $('monStats').textContent = '학생 '+entries.length+'명 · 접속 '+online+' · 완주 '+done;
   syncCompleted(done);
-  $('monEmpty').textContent = entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.';
+  /* 구독 실패 문구가 있으면 그것을 우선한다 — "학생이 안 들어온 것"과 "구독이 깨진 것"은 다르다 */
+  $('monEmpty').textContent = T.studentsErr || (entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.');
   $('sgrid').innerHTML = entries.map(([sid,s])=>{
     const prog = s.progress||{}, live=s.live||{}, rep=s.report||{};
     const done_=prog.done||0, arr=prog.arrived||0, pct = arr? Math.round(done_/arr*100):0;

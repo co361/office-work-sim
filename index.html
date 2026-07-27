@@ -7743,7 +7743,10 @@ init3D();
 
   async function fbDoJoin(){
     const codeEl=$('fbCode'), btn=$('fbJoin');
-    if(!codeEl || !btn) return;
+    /* btn.disabled를 재진입 락으로도 쓴다. keydown 핸들러는 버튼을 거치지 않고 직접 호출하므로,
+       Enter 키 리피트로 fbJoinFlow가 동시에 두 번 돌면 둘 다 노드 생성 전에 stuRef를 읽어
+       isNew=true가 되고 credits/{owner}/spent 트랜잭션이 2회 커밋된다(규칙은 +1씩이라 둘 다 통과). */
+    if(!codeEl || !btn || btn.disabled) return;
     const code = String(codeEl.value||'').trim();
     const nm = ($('pName').value||'').trim();
     if(!fbIsCode(code)){ fbNoteMsg('6자리 숫자 세션코드를 입력하세요.', true); return; }
