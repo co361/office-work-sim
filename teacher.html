@@ -573,11 +573,25 @@ function subscribeStudents(){
   }, err=>{ $('monEmpty').textContent = '학생 데이터 구독 실패: '+(err.code||err.message||err); });
 }
 function isOnline(s){ return s.online===true && s.lastSeen && (Date.now()-s.lastSeen) < PRESENCE_MS; }
+
+/* 완주 카운터 동기화 — 학생은 meta 쓰기 권한이 없다(규칙 rooms/$code/meta .write = 관리자|소유강사).
+   그래서 학생이 직접 올리려던 meta/completed는 항상 권한거부로 실패했고, 방 목록·관리자 화면의
+   '완주'가 늘 0으로 보였다. 규칙을 열면 익명 사용자가 상한 없이 조작할 수 있으므로(코드 6자리라
+   남의 방도 가능) 여는 대신, 이미 students를 구독 중인 소유 강사가 집계값을 되쓴다. */
+function syncCompleted(done){
+  if(!T.code || !T.meta || T.meta.owner!==T.uid) return;
+  if((T.meta.completed||0) === done) return;          // 변화 없으면 쓰지 않음(쓰기 낭비 방지)
+  T.meta.completed = done;                            // 로컬 즉시 반영 → 방 헤더가 바로 갱신
+  // WRITE: /rooms/{code}/meta/completed (소유 강사 권한)
+  db.ref('rooms/'+T.code+'/meta/completed').set(done).catch(()=>{});
+  try{ renderRoomHeader(); }catch(e){}
+}
 function renderMonitor(){
   const entries = Object.entries(T.studentsSnap);
   const online = entries.filter(([,s])=>isOnline(s)).length;
   const done = entries.filter(([,s])=>s.status==='done').length;
   $('monStats').textContent = '학생 '+entries.length+'명 · 접속 '+online+' · 완주 '+done;
+  syncCompleted(done);
   $('monEmpty').textContent = entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.';
   $('sgrid').innerHTML = entries.map(([sid,s])=>{
     const prog = s.progress||{}, live=s.live||{}, rep=s.report||{};

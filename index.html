@@ -7456,7 +7456,7 @@ function buildReport(){
     endedAt: new Date().toISOString()
   };
   submitReport();
-  fbSubmitReport();   /* firebase 모드: RTDB에 report 기록 + status=done + completed++ (아니면 no-op) */
+  fbSubmitReport();   /* firebase 모드: RTDB에 report 기록 + status=done (아니면 no-op) */
   /* AI 개인 총평 — 비동기 생성 (실패 시 섹션 숨김) */
   generateAiReportSummary({
     name: G.player.name, dept: D.name, rank: RANKS[G.rank].name, culture: C.name,
@@ -7689,7 +7689,7 @@ init3D();
     }catch(e){}
   };
 
-  /* 완주: students/{sid}/report = reportData; status=done; meta/completed++ */
+  /* 완주: students/{sid}/report = reportData; status=done (완주 집계는 강사가 되씀) */
   window.fbSubmitReport = function(){
     if(G.mode!=='firebase' || !G.fb || !G.fb.joined || !FB.db) return;
     try{
@@ -7697,9 +7697,10 @@ init3D();
       const base = FB.db.ref('rooms/'+code+'/students/'+sid);
       base.child('report').set(G.reportData);
       base.child('status').set('done');
-      if(!G.fb._completed){ G.fb._completed = true;
-        try{ FB.db.ref('rooms/'+code+'/meta/completed').transaction(n => (n||0)+1); }catch(e){}
-      }
+      /* meta/completed는 여기서 올리지 않는다 — 학생은 meta 쓰기 권한이 없어(규칙
+         rooms/$code/meta .write = 관리자|소유강사) 항상 권한거부로 조용히 실패했다.
+         규칙을 열면 익명 사용자가 상한 없이 조작 가능해지므로, 집계는 students의
+         status==='done'을 이미 구독 중인 소유 강사가 되쓴다(teacher.html syncCompleted). */
     }catch(e){}
   };
 
