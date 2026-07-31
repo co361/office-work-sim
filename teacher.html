@@ -280,6 +280,7 @@ const T = {
   studentsSnap:{},                    // sid -> student node (라이브 모니터 구독 결과)
   studentsLoaded:false,               // students 첫 스냅샷이 도착했는가 (syncCompleted 가드)
   studentsErr:null,                   // students 구독 실패 메시지 (프레즌스 타이머가 못 덮게 보관)
+  syncFail:0, syncFailMsg:null,       // 완주 카운터 동기화 연속 실패 횟수 / 강사 통지 문구
   monRef:null,                        // 구독 중인 students ref (해제용)
   selSid:null,                        // 상호작용 대상 학생
   dbSid:null,                         // 디브리프에서 선택한 학생
@@ -396,6 +397,7 @@ function show(which){
 function showRooms(){
   if(T.monRef){ T.monRef.off(); T.monRef=null; }
   T.code=null; T.meta=null; T.studentsSnap={}; T.studentsLoaded=false; T.studentsErr=null;
+  T.syncFail=0; T.syncFailMsg=null;
   show('roomsView');
 }
 
@@ -565,6 +567,7 @@ function switchTab(name){
 function subscribeStudents(){
   if(T.monRef){ T.monRef.off(); }
   T.studentsSnap = {}; T.studentsLoaded = false; T.studentsErr = null;
+  T.syncFail = 0; T.syncFailMsg = null;
   // READ(실시간): /rooms/{code}/students on value
   T.monRef = db.ref('rooms/'+T.code+'/students');
   T.monRef.on('value', snap=>{
@@ -590,22 +593,44 @@ function isOnline(s){ return s.online===true && s.lastSeen && (Date.now()-s.last
 function syncCompleted(done){
   if(!T.code || !T.meta || T.meta.owner!==T.uid) return;
   /* 첫 스냅샷 도착 전에는 쓰지 않는다 — studentsSnap이 {}인 채로 8초 프레즌스 타이머가
-     먼저 돌면(구독 지연·err 콜백) done=0으로 서버 카운터를 0으로 덮어쓴다. */
+     먼저 돌면 done=0으로 서버 카운터를 0으로 덮어쓴다. 이 플래그가 false로 남는 것은
+     "첫 스냅샷이 오기 전에 구독이 취소된 경우"뿐이다. 정상 로드 후 취소되면 true로 남고
+     동결된 스냅샷으로 계속 돌지만, 값이 변하지 않아 아래 조기 반환에 걸려 write는 없다. */
   if(!T.studentsLoaded) return;
   if((T.meta.completed||0) === done) return;          // 변화 없으면 쓰지 않음(쓰기 낭비 방지)
+  const m = T.meta, prev = T.meta.completed;           // m = 지연 catch가 엉뚱한 방을 오염시키지 않게
   T.meta.completed = done;                            // 로컬 즉시 반영 → 방 헤더가 바로 갱신
   // WRITE: /rooms/{code}/meta/completed (소유 강사 권한)
-  db.ref('rooms/'+T.code+'/meta/completed').set(done).catch(()=>{});
+  db.ref('rooms/'+T.code+'/meta/completed').set(done)
+    .then(()=>{ if(T.meta===m){ T.syncFail=0; T.syncFailMsg=null; } })   // 복구되면 통지 해제
+    .catch(e=>{
+    /* 로컬만 선반영해 두면 다음에 done이 바뀌기 전까지 영영 재시도하지 않는다.
+       되돌려서 같은 값으로도 다시 쓰게 하고, 진단 단서를 남긴다(같은 파일 다른 write와 동일 규약).
+       catch가 늦게 오는 사이 openRoom이 T.meta를 새 객체로 갈아끼웠으면 건드리지 않는다. */
+    if(T.meta !== m) return;
+    T.meta.completed = prev;
+    T.syncFail = (T.syncFail||0)+1;
+    if(T.syncFail<=3) console.warn('완주 카운터 동기화 실패 — 규칙 확인 필요', e);
+    /* 여기서 monEmpty에 직접 쓰면 다음 renderMonitor(8초 타이머)가 곧바로 지운다.
+       studentsErr와 같은 "상태에 보관 + 렌더 우선순위" 패턴으로 계속 떠 있게 한다. */
+    if(T.syncFail>=3) T.syncFailMsg = '완주 카운터를 서버에 반영하지 못했습니다(화면 표시만 갱신됨).';
+    try{ renderRoomHeader(); }catch(_){}   // 낙관값으로 이미 그려졌으므로 되돌린 값으로 다시 그린다
+  });
   try{ renderRoomHeader(); }catch(e){}
 }
 function renderMonitor(){
   const entries = Object.entries(T.studentsSnap);
   const online = entries.filter(([,s])=>isOnline(s)).length;
   const done = entries.filter(([,s])=>s.status==='done').length;
-  $('monStats').textContent = '학생 '+entries.length+'명 · 접속 '+online+' · 완주 '+done;
+  /* 구독이 끊긴 상태에서 "학생 0명 · 접속 0 · 완주 0"을 그대로 띄우면 '아무도 안 왔다'로 오독된다.
+     스냅샷은 동결된 채 남아 있으므로 마지막 확인값을 병기한다(강사가 대략이라도 알 수 있게). */
+  $('monStats').textContent = T.studentsErr
+    ? '집계 불가(구독 끊김) — 마지막 확인 '+entries.length+'명 · 완주 '+done
+    : '학생 '+entries.length+'명 · 접속 '+online+' · 완주 '+done;
   syncCompleted(done);
   /* 구독 실패 문구가 있으면 그것을 우선한다 — "학생이 안 들어온 것"과 "구독이 깨진 것"은 다르다 */
-  $('monEmpty').textContent = T.studentsErr || (entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.');
+  $('monEmpty').textContent = T.studentsErr || T.syncFailMsg
+    || (entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.');
   $('sgrid').innerHTML = entries.map(([sid,s])=>{
     const prog = s.progress||{}, live=s.live||{}, rep=s.report||{};
     const done_=prog.done||0, arr=prog.arrived||0, pct = arr? Math.round(done_/arr*100):0;

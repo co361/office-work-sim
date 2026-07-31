@@ -7597,15 +7597,55 @@ init3D();
   async function fbJoinFlow(code, name){
     await fbInit();
     await FB.auth.signInAnonymously();
-    const sid = FB.auth.currentUser.uid;
+    let sid = FB.auth.currentUser.uid;      /* 신원 확인 결과에 따라 아래에서 새 uid로 바뀔 수 있다 */
     const metaRef = FB.db.ref('rooms/'+code+'/meta');
     const meta = (await metaRef.once('value')).val();
     if(!meta) return {ok:false, error:'존재하지 않는 세션코드입니다. 코드를 다시 확인하세요.'};
     if(meta.status!=='waiting' && meta.status!=='live') return {ok:false, error:'종료된 세션입니다.'};
     const cap = +meta.capacity||0, enr = +meta.enrolled||0;
     if(cap!==0 && enr>=cap) return {ok:false, error:'정원이 초과된 세션입니다.'};
-    const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
-    const stuSnap = (await stuRef.once('value'));           /* 노드 생성 "전"에 한 번만 읽는다 */
+    const nm20 = String(name||'').slice(0,20);
+    /* 이름 비교는 정규화해서 한다 — 원문 비교면 "홍 길동"↔"홍길동", 전각 공백, macOS 입력기의
+       NFD 자모 분해가 전부 "다른 사람"으로 판정된다. 그때마다 새 노드 + spent+1 + enrolled+1 이라,
+       정원이 걸린 방에서는 오타 한 번이 마지막 학생의 입장을 막는다(초입의 enr>=cap 검사). */
+    const nkey = s => String(s||'').replace(/\s+/g,'').normalize('NFC');
+    let renewed = null;                     /* 새 신원을 발급했다면 이전 이름 — 호출부가 알린다 */
+    let stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+    let stuSnap = (await stuRef.once('value'));             /* 노드 생성 "전"에 한 번만 읽는다 */
+    /* 신원 확인 — 익명 인증이 LOCAL persistence라 "같은 브라우저 프로필 = 같은 익명 uid = 같은
+       학생 노드"다. 실습실처럼 기기를 돌려 쓰면 뒷사람이 앞사람 노드에 그대로 올라타서,
+       ① 이름이 덮어써지고 ② 제출 시 앞사람 report가 사라지고 ③ isNew=false라 크레딧이 차감되지
+       않고 ④ 앞사람이 완주했으면 뒷사람이 입장 순간부터 '완주'로 표시된다.
+       저장된 이름과 입력한 이름이 다르면 물어보고, 다른 사람이면 새 익명 신원을 발급한다.
+       (signOut 후 signInAnonymously는 복구 불가능한 새 계정을 만든다 — 그래서 노드가 갈라진다) */
+    if(stuSnap.exists()){
+      const prevName = String((stuSnap.val()||{}).name||'');
+      if(prevName && nkey(prevName) !== nkey(nm20)){
+        /* 묻지 않고 무조건 새 신원을 발급한다. 물어보는 안을 쓰지 않는 이유:
+           이 함수의 진입 경로가 코드 입력창의 Enter keydown이라, 학생이 Enter를 길게 누르면
+           그 키가 방금 뜬 모달에 들어가 읽지도 않고 기본 버튼으로 확정된다. 어느 쪽을 기본으로
+           두든 위험하고(계승이 기본이면 앞사람 보고서 소실, 반대로 두면 브라우저가 반복
+           대화상자를 차단할 때 confirm()이 false를 반환해 다시 계승된다) 실습실 연속 사용이
+           바로 그 시나리오다. 자동 발급은 어느 방향으로 틀려도 데이터를 잃지 않는다 —
+           앞사람 노드는 손대지 않은 채 남고, 최악이 크레딧 1 추가 차감이다.
+           (이름 오타로 새 노드가 생겨도 입장 직후라 잃을 진행이 없다.) */
+        /* fbNoteMsg는 $('fbNote') 단일 슬롯이라 8초 워치독·'✓ 입장 완료'·startGame이
+           1~2초 안에 덮어버린다. 자동 발급의 유일한 안전장치가 "알린다"인데 그게 무력해진다.
+           사실만 반환하고, 화면 전환을 넘겨 알림센터(🔔)에 남는 toast로 호출부에서 띄운다. */
+        renewed = prevName;
+        await FB.auth.signOut();
+        await FB.auth.signInAnonymously();
+        sid = FB.auth.currentUser.uid;
+        /* signOut 직후에는 DB 커넥션에 새 토큰이 아직 전파되지 않아 규칙(auth.uid === $sid)이
+           permission_denied를 낼 수 있다. 토큰을 강제 확정하고, 그래도 경합하면 1회 재시도. */
+        try{ await FB.auth.currentUser.getIdToken(true); }catch(e){}
+        stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+        stuSnap = await stuRef.once('value').catch(async ()=>{
+          await new Promise(r=>setTimeout(r,700));
+          return stuRef.once('value');
+        });
+      }
+    }
     const isNew = !stuSnap.exists();
     /* 이미 완주한 학생인가 — fbRegister가 status를 'playing'으로 되돌리지 않게 하는 근거.
        여기서 같이 캡처해 추가 읽기 0을 유지한다(fbRegister는 이 직후 1회만 호출됨). */
@@ -7639,7 +7679,7 @@ init3D();
     }
     G.mode = 'firebase';
     G.fb = { code, sid, preset: meta.preset||{}, joined:false, isNew, wasDone };
-    return {ok:true, preset: meta.preset||{}, isNew};
+    return {ok:true, preset: meta.preset||{}, isNew, renewed};
   }
 
   /* 학생 노드 생성 + presence(onDisconnect) + lastSeen 하트비트 + 메시지 구독 */
@@ -7704,8 +7744,29 @@ init3D();
     try{
       const {code, sid} = G.fb;
       const base = FB.db.ref('rooms/'+code+'/students/'+sid);
-      base.child('report').set(G.reportData);
-      base.child('status').set('done');
+      /* 완주 표시는 보고서 저장 성공 여부와 독립이고 멱등이다. 트랜잭션 콜백 안에 두면
+         왕복이 끝나기 전에 탭을 닫은 학생이 report 있음 + status='playing'으로 남아
+         강사의 `status==='done' && report` 필터에서 통째로 빠진다(보고서 화면 직후 탭을
+         닫는 것은 교육 종료 시 흔하다). 기존 deploy 판처럼 같은 틱에 내보낸다. */
+      base.child('status').set('done').catch(()=>{});
+      /* 첫 제출만 인정한다. 예전에는 .set()이라, 완주한 학생이 새로고침해 다시 플레이하고
+         재제출하면 첫 보고서를 통째로 덮어썼다 — 이력이 없어 사고를 인지할 방법조차 없었고
+         강사 CSV·디브리프에는 마지막 것만 남았다. 평가 기준은 첫 제출이다.
+         트랜잭션으로 "없을 때만 쓰기"를 원자적으로 처리한다(undefined 반환 = 중단). */
+      base.child('report').transaction(
+        cur => (cur === null ? G.reportData : undefined),
+        (err, committed) => {
+          const el = $('rpSync');
+          if(err){
+            /* 삼키면 submitReport()가 먼저 쓴 '✓ 전송되었습니다'가 그대로 남아
+               아무것도 저장 안 됐는데 성공으로 보인다. 조용한 유실 방지가 이 변경의 취지다. */
+            if(el) el.textContent = '⚠ 전송 실패 — [보고서 파일 저장]으로 받아 강사에게 제출하세요.';
+            return;
+          }
+          /* 이미 첫 보고서가 있다 → 이번 결과는 저장하지 않았음을 알린다. 조용히 버리지 않는다. */
+          if(!committed && el) el.textContent = '⚠ 이미 제출된 보고서가 있어 이번 결과는 저장되지 않았습니다. 처음 제출한 결과가 평가 기준입니다.';
+        }
+      );
       /* meta/completed는 여기서 올리지 않는다 — 학생은 meta 쓰기 권한이 없어(규칙
          rooms/$code/meta .write = 관리자|소유강사) 항상 권한거부로 조용히 실패했다.
          규칙을 열면 익명 사용자가 상한 없이 조작 가능해지므로, 집계는 students의
@@ -7741,6 +7802,27 @@ init3D();
     n.textContent = msg||'';
   }
 
+  /* 입장 워치독 — RTDB once()는 오프라인에서 reject하지 않고 무한 대기한다. 재진입 락 때문에
+     Enter 재시도도 막히므로 "세션 확인 중…"에 영구히 갇힌다. 락을 푸는 건 안전하지 않으므로
+     (재연결 시 이중과금 창이 다시 열린다) 락은 유지하고 안내만 준다.
+     2단계인 이유: 이 흐름의 직렬 왕복은 SDK 3파일 순차 로드 → 익명로그인 → meta → students →
+     크레딧 트랜잭션 → enrolled → 노드 update → aiKey 로 최소 8회다. 교실에서 30명이 같은 AP로
+     동시에 첫 로드하면 정상 입장도 15초를 넘길 수 있어, 그때 "새로고침하세요"가 뜨면 학생이
+     SDK를 다시 받는 재시도 루프에 빠져 망을 더 막는다. 8초엔 기다리라고만 하고 25초에 안내한다.
+     arm/disarm으로 분리해 둔 이유: 입장 도중 사람의 응답을 기다리는 단계가 생기면
+     그동안 타이머를 해제했다 다시 걸어야 오발화하지 않는다. 현재 그런 단계는 없다
+     (신원 분리는 묻지 않고 자동 발급한다 — fbJoinFlow 참조). */
+  let joinWd1=null, joinWd2=null;
+  function armJoinWatchdog(){
+    disarmJoinWatchdog();
+    joinWd1 = setTimeout(()=>fbNoteMsg('연결이 느립니다. 그대로 기다려 주세요…', false), 8000);
+    joinWd2 = setTimeout(()=>fbNoteMsg('⚠ 응답이 없습니다. 네트워크 확인 후 페이지를 새로고침하세요.', true), 25000);
+  }
+  function disarmJoinWatchdog(){
+    if(joinWd1){ clearTimeout(joinWd1); joinWd1=null; }
+    if(joinWd2){ clearTimeout(joinWd2); joinWd2=null; }
+  }
+
   async function fbDoJoin(){
     const codeEl=$('fbCode'), btn=$('fbJoin');
     /* btn.disabled를 재진입 락으로도 쓴다. keydown 핸들러는 버튼을 거치지 않고 직접 호출하므로,
@@ -7752,10 +7834,7 @@ init3D();
     if(!fbIsCode(code)){ fbNoteMsg('6자리 숫자 세션코드를 입력하세요.', true); return; }
     if(nm.length<2){ fbNoteMsg('먼저 위에서 이름을 입력하세요.', true); $('pName').focus(); return; }
     btn.disabled=true; fbNoteMsg('세션 확인 중…', false);
-    /* RTDB once()는 오프라인에서 reject하지 않고 무한 대기한다. 그러면 위 재진입 락 때문에
-       "세션 확인 중…"에 영구히 갇힌다. 락을 푸는 건 안전하지 않으므로(재연결 시 이중과금 창이
-       다시 열린다) 락은 유지하고 탈출 방법만 안내한다. */
-    const wd = setTimeout(()=>fbNoteMsg('⚠ 응답이 없습니다. 네트워크 확인 후 페이지를 새로고침하세요.', true), 15000);
+    armJoinWatchdog();
     try{
       const r = await fbJoinFlow(code, nm);
       if(!r.ok){ fbNoteMsg('⚠ '+r.error, true); btn.disabled=false; return; }
@@ -7763,6 +7842,12 @@ init3D();
       const p = r.preset||{};
       if(typeof setPicksFromConfig==='function') setPicksFromConfig({rank:p.rank, dept:p.dept, cult:p.cult});
       await fbRegister(nm);
+      if(r.renewed){
+        /* toast는 innerHTML로 그리므로 이름은 반드시 esc() — 저장형 XSS 차단 */
+        toast('새 기록으로 시작합니다',
+              '이 기기에 다른 이름("'+esc(r.renewed)+'")의 기록이 남아 있어, 섞이지 않도록 새 기록을 만들었습니다. '
+            + '본인 이름이 맞다면 강사에게 알려 주세요.', 't-msg');
+      }
       const ready = (p.rank && RANKS[p.rank]) && (p.dept && DEPTS[p.dept]) && (p.cult && CULTURES[p.cult]);
       if(ready){
         fbNoteMsg('✓ 입장 완료 — 출근합니다.', false);
@@ -7775,7 +7860,7 @@ init3D();
       fbNoteMsg('⚠ 연결 실패 — 네트워크를 확인하거나 강사에게 문의하세요.', true);
       btn.disabled=false;
     }finally{
-      clearTimeout(wd);   /* 성공·실패 어느 쪽이든 타임아웃 문구가 나중에 덮지 않게 */
+      disarmJoinWatchdog();   /* 성공·실패·조기 return 어느 쪽이든 타임아웃 문구가 나중에 덮지 않게 */
     }
   }
 
