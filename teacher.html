@@ -156,7 +156,8 @@ ul.rlist{margin-left:18px;font-size:13px;line-height:1.8}
       <div><label>학교/그룹명</label><input id="cpGroup" type="text" placeholder="예: 조선대학교 3학년" style="width:200px"></div>
       <button class="btn-p" id="btnCreate">방 개설</button>
     </div>
-    <div class="note">개설하면 6자리 참가코드가 생성됩니다. 학생은 index 화면에서 이 코드로 입장합니다.
+    <div class="note">개설하면 <b>W</b> 로 시작하는 6자 참가코드가 생성됩니다(예: W4RTB8).
+      첫 글자 <b>W</b> 가 WORK SIM 을 가리키므로, 학생이 어느 입장 화면에 넣어도 이 게임으로 들어옵니다.
       선택을 비우면(학생 선택) 학생이 직접 고릅니다. 방은 개설 후 12시간 뒤 자동 만료됩니다.</div>
   </div>
 
@@ -539,10 +540,40 @@ $('btnCreate').onclick = async ()=>{
   }catch(e){ alert('개설 실패: '+(e.code||e.message||e)); }
   finally{ $('btnCreate').disabled=false; $('btnCreate').textContent='방 개설'; }
 };
-/* 6자리 코드 생성 + 충돌 회피(meta read 후 없으면 확정, 있으면 재시도) */
+/* ===================== 방 코드 (3게임 공용 규약 · 2026-08-04) =====================
+   코드 = <게임 접두 1자><뒤 5자>.  WORK SIM 은 'W'.
+     W…  WORK SIM   ·   C…  CO-WORK SIM   ·   M…  메일 시뮬레이션(준비 중)
+
+   왜 6자리 숫자를 버렸나
+     co-work-sim 코드는 영문+숫자 6자인데 우연히 전부 숫자로 나올 수 있었다.
+     그러면 '482913' 이 어느 게임 코드인지 **아무도 가릴 수 없다**. 그래서 학생이
+     게임을 직접 골라야 했다. 이제 첫 글자만 보면 조회 없이 정해진다.
+
+   뒤 5자 알파벳에서 0 1 I O L 을 뺐다 — 강사가 코드를 불러 주고 학생이 받아적는
+   경로라 O/0 · I/1/L 을 섞어 적는 사고가 가장 잦다.
+   ⚠️ co-work-sim 저장소의 public/js/gamecode.js 와 같은 규약이다. 한쪽만 바꾸지 말 것. */
+const WS_CODE_PREFIX = 'W';
+const WS_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const WS_CODE_TAIL = 5;
+
+function randCode(){
+  const n = WS_CODE_TAIL;
+  let buf = null;
+  try{ if(window.crypto && crypto.getRandomValues) buf = crypto.getRandomValues(new Uint8Array(n)); }catch(_){}
+  let out = WS_CODE_PREFIX;
+  for(let i=0;i<n;i++){
+    const r = buf ? buf[i] : Math.floor(Math.random()*256);
+    out += WS_CODE_ALPHABET[r % WS_CODE_ALPHABET.length];
+  }
+  return out;
+}
+
+/* 코드 생성 + 충돌 회피(meta read 후 없으면 확정, 있으면 재시도).
+   접두가 'W' 로 고정돼 co-work-sim 코드와는 원천적으로 겹치지 않는다.
+   남는 것은 WORK SIM 방끼리의 중복뿐이라 이 검사로 충분하다. */
 async function genCode(){
   for(let i=0;i<8;i++){
-    const code = String(Math.floor(100000 + Math.random()*900000));
+    const code = randCode();
     const snap = await db.ref('ws/rooms/'+code+'/meta').once('value');
     if(!snap.exists()) return code;
   }
