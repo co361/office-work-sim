@@ -240,15 +240,34 @@ ul.rlist{margin-left:18px;font-size:13px;line-height:1.8}
 <script>
 /* ===================== 상수/유틸 ===================== */
 const FIREBASE_CFG = {
-  apiKey: "AIzaSyCCYlmrWJgVIYx0pF3QdsHcoCcxBL3qDEM",
-  authDomain: "office-sim-2004f.firebaseapp.com",
-  databaseURL: "https://office-sim-2004f-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "office-sim-2004f",
-  storageBucket: "office-sim-2004f.firebasestorage.app",
-  messagingSenderId: "436118247639",
-  appId: "1:436118247639:web:cd8025be3d99d88588f892"
+  apiKey: "AIzaSyAvar2Tt5tQaZH4nTP-oLso9yKGXM0Jx5U",
+  authDomain: "team-work-sim.firebaseapp.com",
+  databaseURL: "https://team-work-sim-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "team-work-sim",
+  storageBucket: "team-work-sim.firebasestorage.app",
+  messagingSenderId: "960526002083",
+  appId: "1:960526002083:web:6bc8ed577abbcd55f95c16"
 };
 const $ = id => document.getElementById(id);
+/* ===================== 통합 강사 신분증 읽기 (co-work-sim 과 공유) =====================
+   instructors/ 는 team-work-sim 에서 3게임이 함께 쓰는 노드다. 스키마가 두 벌 공존한다.
+     · 신(통합): profile/{name,org,phone,email} · approval/{status} · games/worksim/{licenseKey}
+     · 구(WORK SIM 단독): 루트에 name·org·phone·status·licenseKey 평면 배치
+   이행기 동안 둘 다 읽어야 하므로 신 경로 우선 OR 폴백으로 고정한다. 읽기는 이 세 함수로만.
+   ⚠ co-work-sim 규칙에는 instructors/$uid 레벨 .write 가 없다. 통짜 set() 은 전부
+     PERMISSION_DENIED 가 되므로 쓰기는 반드시 update() + 하위 경로로 한다. */
+function instStatus(i){ return (i && i.approval && i.approval.status) || (i && i.status) || ''; }
+function instKey(i){ return (i && i.games && i.games.worksim && i.games.worksim.licenseKey) || (i && i.licenseKey) || ''; }
+function instName(i){ return (i && i.displayName) || (i && i.profile && i.profile.name) || (i && i.name) || ''; }
+/* instructors/{uid}/rooms 는 3게임이 공유하는 인덱스다. WORK SIM 방만 골라낸다.
+   값이 true = 구 WORK SIM 방(이사 전 개설), {game:'worksim',...} = 신 WORK SIM 방.
+   co-work-sim 방은 {createdAt,status} 뿐이라 game 이 없어 걸러진다. */
+function wsRoomCodes(idx){
+  return Object.keys(idx||{}).filter(c=>{
+    const v = idx[c];
+    return v === true || (v && typeof v === 'object' && v.game === 'worksim');
+  });
+}
 /* XSS 방어: 학생 이름·리포트 텍스트를 innerHTML에 넣기 전 이스케이프 (admin.html esc 재사용) */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function csvEsc(v){ v = String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
@@ -329,7 +348,13 @@ $('btnSignup').onclick = async ()=>{
   try{
     // Auth 계정 생성 → 자기 uid에 최초 1회 self-write(status:pending, licenseKey 없음: 규칙 통과)
     const cred = await auth.createUserWithEmailAndPassword(email, pw);
-    await db.ref('instructors/'+cred.user.uid).set({
+    /* 신 경로(profile/approval)와 구 루트 필드를 한 update 로 원자 기록한다.
+       set() 이 아니라 update() 인 이유: 통합 규칙에는 instructors/$uid 통짜 .write 가 없다.
+       한 배치에 든 경로가 전부 "본인 self-write" 라 §5-5(권한 혼재 금지)에 걸리지 않는다. */
+    await db.ref('instructors/'+cred.user.uid).update({
+      'profile/email': email, 'profile/name': name, 'profile/org': org,
+      'profile/phone': phone, 'profile/createdAt': TS(),
+      'approval/status': 'pending', 'approval/requestedAt': TS(),
       email: email, name: name, org: org, phone: phone,
       displayName: name, status: 'pending', createdAt: TS()
     });
@@ -366,26 +391,33 @@ auth.onAuthStateChanged(async user=>{
     provisionedUid = user.uid;                       // 이 uid는 한 번만 시도(재진입/중복 set 방지)
     let isAdmin=false;
     try{ isAdmin = (await db.ref('admins/'+user.uid).once('value')).val()===true; }catch(e){ isAdmin=false; }
-    const node = isAdmin
-      ? { email:user.email, displayName:(user.email||'강사'), status:'approved', createdAt: TS() }
-      : { email:user.email, displayName:(user.email||'강사'), status:'pending',  createdAt: TS() };
+    const st = isAdmin ? 'approved' : 'pending';
+    const nm = user.email || '강사';
+    const node = { email:user.email, displayName:nm, status:st, createdAt: TS(),
+                   profile:{ email:user.email, name:nm }, approval:{ status:st } };
     try{
-      // WRITE: /instructors/{uid} (최초 1회) — 이후 방금 쓴 값을 다시 read해 T.instructor 채움
-      await db.ref('instructors/'+user.uid).set(node);
+      // WRITE: /instructors/{uid} (최초 1회) — 신 경로 + 구 루트 필드 동시 기록(이행기 양방향 호환).
+      // set() 이 아니라 update(): 통합 규칙에 instructors/$uid 통짜 .write 가 없다.
+      await db.ref('instructors/'+user.uid).update({
+        'profile/email': user.email, 'profile/name': nm, 'profile/createdAt': TS(),
+        'approval/status': st, 'approval/requestedAt': TS(),
+        email: user.email, displayName: nm, status: st, createdAt: TS()
+      });
       inst = (await db.ref('instructors/'+user.uid).once('value')).val() || node;
     }catch(e){ /* 생성 거부 시 아래 로직에서 승인 대기 화면으로 안내 */ }
   }
   T.instructor = inst;
-  if(!inst || inst.status!=='approved'){
-    $('lockTitle').textContent = (inst && inst.status==='suspended') ? '계정 정지됨' : '승인 대기 중';
-    $('lockMsg').innerHTML = (inst && inst.status==='suspended')
+  const st0 = instStatus(inst);
+  if(!inst || st0!=='approved'){
+    $('lockTitle').textContent = (st0==='suspended') ? '계정 정지됨' : '승인 대기 중';
+    $('lockMsg').innerHTML = (st0==='suspended')
       ? '이 계정은 정지되었습니다. 관리자에게 문의하세요.'
       : '가입 신청이 접수되어 관리자 승인을 기다리는 중입니다. 승인이 완료되면 이 계정으로 로그인해 강사 콘솔을 사용할 수 있습니다.<br>'
-        + '<span class="note">(관리자 참고: ' + esc(user.email) + ' 의 <span class="mono">instructors/'+esc(user.uid)+'</span> 노드 status=approved 설정 시 활성화)</span>';
+        + '<span class="note">(관리자 참고: ' + esc(user.email) + ' 의 <span class="mono">instructors/'+esc(user.uid)+'</span> 노드 approval/status=approved 설정 시 활성화)</span>';
     show('locked');
     return;
   }
-  $('hdRight').innerHTML = esc(inst.displayName||user.email) + ' <button onclick="doLogout()">로그아웃</button>';
+  $('hdRight').innerHTML = esc(instName(inst)||user.email) + ' <button onclick="doLogout()">로그아웃</button>';
   showRooms();
   loadRooms();
 });
@@ -410,7 +442,7 @@ async function loadCredits(){
   let bal=0, spent=0;
   try{
     // READ: /credits/{uid}
-    const c=(await db.ref('credits/'+T.uid).once('value')).val()||{};
+    const c=(await db.ref('ws/credits/'+T.uid).once('value')).val()||{};
     bal=+c.balance||0; spent=+c.spent||0;
   }catch(e){ /* read 거부 시 0/0 표시 */ }
   T.credits={balance:bal, spent:spent};
@@ -434,13 +466,13 @@ async function loadRooms(){
   let idxCodes = [];
   try{
     const idx = (await db.ref('instructors/'+T.uid+'/rooms').once('value')).val() || {};
-    idxCodes = Object.keys(idx);
+    idxCodes = wsRoomCodes(idx);   // 공유 인덱스에서 WORK SIM 방만 (co-work-sim 방 제외)
   }catch(e){ /* 인덱스 read 실패 시 로컬 캐시만 사용 */ }
   const codes = [...new Set(idxCodes.concat(cachedCodes()))];
   if(!codes.length){ $('roomTable').querySelector('tbody').innerHTML=''; $('roomsEmpty').textContent='아직 개설한 방이 없습니다.'; return; }
   // READ: 각 code로 /rooms/{code}/meta
   const metas = await Promise.all(codes.map(async c=>{
-    try{ return {code:c, meta:(await db.ref('rooms/'+c+'/meta').once('value')).val()}; }
+    try{ return {code:c, meta:(await db.ref('ws/rooms/'+c+'/meta').once('value')).val()}; }
     catch(e){ return {code:c, meta:null}; }
   }));
   // 내 소유(meta.owner===uid)만, 개설시각 내림차순
@@ -481,21 +513,23 @@ $('btnCreate').onclick = async ()=>{
     }
     const code = await genCode();
     // WRITE: /rooms/{code}/meta
-    await db.ref('rooms/'+code+'/meta').set({
-      owner: T.uid, ownerName: (T.instructor.displayName||T.email||''),
+    await db.ref('ws/rooms/'+code+'/meta').set({
+      owner: T.uid, ownerName: (instName(T.instructor)||T.email||''),
       status:'waiting', preset, capacity, group:$('cpGroup').value.trim(),
       enrolled:0, completed:0,
       createdAt: TS(), expiry: Date.now() + 12*3600*1000
     });
     // WRITE: /rooms/{code}/private/aiKey — 강사 라이선스 키를 방에 상속(참가 학생만 read).
     // 순서 중요: meta.set(owner 세팅) 직후여야 규칙(meta.owner===uid)이 private write를 허용.
-    const licenseKey = (T.instructor && T.instructor.licenseKey) || '';
+    const licenseKey = instKey(T.instructor);
     if(licenseKey){
-      try{ await db.ref('rooms/'+code+'/private/aiKey').set(licenseKey); }
+      try{ await db.ref('ws/rooms/'+code+'/private/aiKey').set(licenseKey); }
       catch(e){ console.warn('aiKey 심기 실패(§ 규칙 확인 필요)', e); }
     }
-    // WRITE: /instructors/{uid}/rooms/{code}=true (내 방 인덱스). 규칙상 거부될 수 있어 실패 허용.
-    try{ await db.ref('instructors/'+T.uid+'/rooms/'+code).set(true); }
+    // WRITE: /instructors/{uid}/rooms/{code} (내 방 인덱스 — 3게임 공유).
+    // 값이 true 였던 구 형식은 통합 규칙의 .validate(hasChildren(['createdAt','status']))를 통과하지 못한다.
+    // game 필드로 어느 게임 방인지 표시해 co-work-sim 방과 섞이지 않게 한다. 실패 허용(로컬 캐시 폴백).
+    try{ await db.ref('instructors/'+T.uid+'/rooms/'+code).set({game:'worksim', createdAt:TS(), status:'waiting'}); }
     catch(e){ console.warn('rooms 인덱스 쓰기 거부(§5 규칙 확인 필요) — 로컬 캐시로 대체', e); }
     cacheAdd(code);
     alert('방이 개설되었습니다.\n참가코드: '+code);
@@ -509,7 +543,7 @@ $('btnCreate').onclick = async ()=>{
 async function genCode(){
   for(let i=0;i<8;i++){
     const code = String(Math.floor(100000 + Math.random()*900000));
-    const snap = await db.ref('rooms/'+code+'/meta').once('value');
+    const snap = await db.ref('ws/rooms/'+code+'/meta').once('value');
     if(!snap.exists()) return code;
   }
   throw new Error('코드 생성 충돌이 반복됩니다. 다시 시도하세요.');
@@ -518,7 +552,7 @@ async function genCode(){
 /* ===================== 방 상세: 열기/시작/종료 ===================== */
 async function openRoom(code){
   T.code = code; T.selSid=null; T.dbSid=null;
-  const meta = (await db.ref('rooms/'+code+'/meta').once('value')).val();
+  const meta = (await db.ref('ws/rooms/'+code+'/meta').once('value')).val();
   T.meta = meta;
   $('rvCode').textContent = code;
   renderRoomHeader();
@@ -540,17 +574,17 @@ function renderRoomHeader(){
 }
 $('btnStart').onclick = async ()=>{
   // WRITE: /rooms/{code}/meta {status:'live', startedAt}
-  await db.ref('rooms/'+T.code+'/meta').update({status:'live', startedAt:TS()});
+  await db.ref('ws/rooms/'+T.code+'/meta').update({status:'live', startedAt:TS()});
   T.meta.status='live'; renderRoomHeader(); loadRooms();
 };
 $('btnEnd').onclick = async ()=>{
   if(!confirm('방을 종료할까요? 종료 후에는 신규 입장이 차단됩니다.')) return;
   // WRITE: /rooms/{code}/meta {status:'ended', endedAt}
-  await db.ref('rooms/'+T.code+'/meta').update({status:'ended', endedAt:TS()});
+  await db.ref('ws/rooms/'+T.code+'/meta').update({status:'ended', endedAt:TS()});
   // 학생 online 정리 (규칙상 소유 강사는 students 쓰기 허용)
   const ups={};
   Object.keys(T.studentsSnap).forEach(sid=>{ ups[sid+'/online']=false; });
-  if(Object.keys(ups).length){ try{ await db.ref('rooms/'+T.code+'/students').update(ups); }catch(e){} }
+  if(Object.keys(ups).length){ try{ await db.ref('ws/rooms/'+T.code+'/students').update(ups); }catch(e){} }
   T.meta.status='ended'; renderRoomHeader(); loadRooms();
 };
 
@@ -569,7 +603,7 @@ function subscribeStudents(){
   T.studentsSnap = {}; T.studentsLoaded = false; T.studentsErr = null;
   T.syncFail = 0; T.syncFailMsg = null;
   // READ(실시간): /rooms/{code}/students on value
-  T.monRef = db.ref('rooms/'+T.code+'/students');
+  T.monRef = db.ref('ws/rooms/'+T.code+'/students');
   T.monRef.on('value', snap=>{
     T.studentsSnap = snap.val() || {};
     T.studentsLoaded = true;
@@ -601,7 +635,7 @@ function syncCompleted(done){
   const m = T.meta, prev = T.meta.completed;           // m = 지연 catch가 엉뚱한 방을 오염시키지 않게
   T.meta.completed = done;                            // 로컬 즉시 반영 → 방 헤더가 바로 갱신
   // WRITE: /rooms/{code}/meta/completed (소유 강사 권한)
-  db.ref('rooms/'+T.code+'/meta/completed').set(done)
+  db.ref('ws/rooms/'+T.code+'/meta/completed').set(done)
     .then(()=>{ if(T.meta===m){ T.syncFail=0; T.syncFailMsg=null; } })   // 복구되면 통지 해제
     .catch(e=>{
     /* 로컬만 선반영해 두면 다음에 done이 바뀌기 전까지 영영 재시도하지 않는다.
@@ -660,7 +694,7 @@ $('btnSendMsg').onclick = async ()=>{
   const to=$('msgTo').value, kind=$('msgKind').value;
   try{
     // WRITE: push /rooms/{code}/messages {to, kind, text, at}
-    await db.ref('rooms/'+T.code+'/messages').push({to, kind, text, at:TS()});
+    await db.ref('ws/rooms/'+T.code+'/messages').push({to, kind, text, at:TS()});
     $('msgText').value=''; $('msgOut').textContent='✓ 전송됨 ('+(to==='all'?'전체':(T.studentsSnap[to]?.name||to))+', '+kind+')';
     setTimeout(()=>$('msgOut').textContent='', 2500);
   }catch(e){ $('msgOut').textContent='⚠ 전송 실패: '+(e.code||e.message||e); }
@@ -682,11 +716,11 @@ async function openDebrief(sid){
   T.dbSid=sid;
   $('dbBody').innerHTML='<div class="note">불러오는 중…</div>';
   // READ: /rooms/{code}/students/{sid}/report
-  const rep = (await db.ref('rooms/'+T.code+'/students/'+sid+'/report').once('value')).val();
+  const rep = (await db.ref('ws/rooms/'+T.code+'/students/'+sid+'/report').once('value')).val();
   const s = T.studentsSnap[sid]||{};
   if(!rep){ $('dbBody').innerHTML='<div class="note">'+esc(s.name||sid)+' 님의 완주 리포트가 아직 없습니다. (완주 시 자동 기록)</div>'; return; }
   // READ: 기존 개인 코멘트
-  const cmt = (await db.ref('rooms/'+T.code+'/debrief/'+sid).once('value')).val() || {};
+  const cmt = (await db.ref('ws/rooms/'+T.code+'/debrief/'+sid).once('value')).val() || {};
   renderReport(rep, s, sid, cmt);
 }
 /* index.html reportData 구조를 그대로 렌더 */
@@ -725,7 +759,7 @@ function growthHtml(gr){
 window.saveComment = async sid=>{
   const text=$('dbComment').value.trim();
   // WRITE: /rooms/{code}/debrief/{sid} = {text, by, at}
-  await db.ref('rooms/'+T.code+'/debrief/'+sid).set({text, by:T.uid, at:TS()});
+  await db.ref('ws/rooms/'+T.code+'/debrief/'+sid).set({text, by:T.uid, at:TS()});
   $('cmtOut').textContent='✓ 저장됨'; setTimeout(()=>$('cmtOut').textContent='',2000);
 };
 
@@ -779,12 +813,12 @@ function renderSummary(){
 }
 /* 수업 전체 총평 */
 async function loadDebriefComments(){
-  const cls=(await db.ref('rooms/'+T.code+'/debrief/_class').once('value')).val()||{};
+  const cls=(await db.ref('ws/rooms/'+T.code+'/debrief/_class').once('value')).val()||{};
   $('classComment').value = cls.text||'';
 }
 $('btnSaveClass').onclick = async ()=>{
   // WRITE: /rooms/{code}/debrief/_class = {text, by, at}
-  await db.ref('rooms/'+T.code+'/debrief/_class').set({text:$('classComment').value.trim(), by:T.uid, at:TS()});
+  await db.ref('ws/rooms/'+T.code+'/debrief/_class').set({text:$('classComment').value.trim(), by:T.uid, at:TS()});
   $('classOut').textContent='✓ 저장됨'; setTimeout(()=>$('classOut').textContent='',2000);
 };
 /* CSV 내보내기 — 완주 리포트 (admin.html 열 구성과 정합) */

@@ -7559,13 +7559,13 @@ init3D();
   'use strict';
   /* teacher.html·admin.html과 동일 계약 (web-config.json) */
   const FIREBASE_CFG = {
-    apiKey: "AIzaSyCCYlmrWJgVIYx0pF3QdsHcoCcxBL3qDEM",
-    authDomain: "office-sim-2004f.firebaseapp.com",
-    databaseURL: "https://office-sim-2004f-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "office-sim-2004f",
-    storageBucket: "office-sim-2004f.firebasestorage.app",
-    messagingSenderId: "436118247639",
-    appId: "1:436118247639:web:cd8025be3d99d88588f892"
+    apiKey: "AIzaSyAvar2Tt5tQaZH4nTP-oLso9yKGXM0Jx5U",
+    authDomain: "team-work-sim.firebaseapp.com",
+    databaseURL: "https://team-work-sim-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "team-work-sim",
+    storageBucket: "team-work-sim.firebasestorage.app",
+    messagingSenderId: "960526002083",
+    appId: "1:960526002083:web:6bc8ed577abbcd55f95c16"
   };
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.5/';
   const SDK_FILES = ['firebase-app-compat.js','firebase-auth-compat.js','firebase-database-compat.js'];
@@ -7598,7 +7598,7 @@ init3D();
     await fbInit();
     await FB.auth.signInAnonymously();
     let sid = FB.auth.currentUser.uid;      /* 신원 확인 결과에 따라 아래에서 새 uid로 바뀔 수 있다 */
-    const metaRef = FB.db.ref('rooms/'+code+'/meta');
+    const metaRef = FB.db.ref('ws/rooms/'+code+'/meta');
     const meta = (await metaRef.once('value')).val();
     if(!meta) return {ok:false, error:'존재하지 않는 세션코드입니다. 코드를 다시 확인하세요.'};
     if(meta.status!=='waiting' && meta.status!=='live') return {ok:false, error:'종료된 세션입니다.'};
@@ -7610,7 +7610,7 @@ init3D();
        정원이 걸린 방에서는 오타 한 번이 마지막 학생의 입장을 막는다(초입의 enr>=cap 검사). */
     const nkey = s => String(s||'').replace(/\s+/g,'').normalize('NFC');
     let renewed = null;                     /* 새 신원을 발급했다면 이전 이름 — 호출부가 알린다 */
-    let stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+    let stuRef = FB.db.ref('ws/rooms/'+code+'/students/'+sid);
     let stuSnap = (await stuRef.once('value'));             /* 노드 생성 "전"에 한 번만 읽는다 */
     /* 신원 확인 — 익명 인증이 LOCAL persistence라 "같은 브라우저 프로필 = 같은 익명 uid = 같은
        학생 노드"다. 실습실처럼 기기를 돌려 쓰면 뒷사람이 앞사람 노드에 그대로 올라타서,
@@ -7639,7 +7639,7 @@ init3D();
         /* signOut 직후에는 DB 커넥션에 새 토큰이 아직 전파되지 않아 규칙(auth.uid === $sid)이
            permission_denied를 낼 수 있다. 토큰을 강제 확정하고, 그래도 경합하면 1회 재시도. */
         try{ await FB.auth.currentUser.getIdToken(true); }catch(e){}
-        stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+        stuRef = FB.db.ref('ws/rooms/'+code+'/students/'+sid);
         stuSnap = await stuRef.once('value').catch(async ()=>{
           await new Promise(r=>setTimeout(r,700));
           return stuRef.once('value');
@@ -7665,7 +7665,7 @@ init3D();
          .transaction 사용(경합 시 정당 학생 헛거부 방지). 실패(잔액초과·경합소진·규칙거부)=입장 거부 */
       let committed=false;
       try{
-        const res = await FB.db.ref('credits/'+owner+'/spent').transaction(n => (n==null?0:n)+1);
+        const res = await FB.db.ref('ws/credits/'+owner+'/spent').transaction(n => (n==null?0:n)+1);
         committed = !!(res && res.committed);
       }catch(e){ committed=false; }
       if(!committed){
@@ -7685,7 +7685,7 @@ init3D();
   /* 학생 노드 생성 + presence(onDisconnect) + lastSeen 하트비트 + 메시지 구독 */
   async function fbRegister(name){
     const {code, sid} = G.fb;
-    const stuRef = FB.db.ref('rooms/'+code+'/students/'+sid);
+    const stuRef = FB.db.ref('ws/rooms/'+code+'/students/'+sid);
     const TS = firebase.database.ServerValue.TIMESTAMP;
     /* 완주(status==='done')한 학생이 새로고침해도 'playing'으로 되돌리지 않는다.
        되돌리면 강사 모니터의 done 집계가 줄고 syncCompleted가 meta/completed를 낮춰 써서
@@ -7695,7 +7695,7 @@ init3D();
     await stuRef.update(upd);
     /* 학생 노드 write 이후에만 방 private AI 키를 읽을 수 있음(규칙). 실패 시 오프라인 폴백 */
     try{
-      const k = (await FB.db.ref('rooms/'+code+'/private/aiKey').once('value')).val();
+      const k = (await FB.db.ref('ws/rooms/'+code+'/private/aiKey').once('value')).val();
       if(k) G.aiKey = String(k);
     }catch(e){ /* 키 없거나 규칙 거부 → 오프라인 폴백 */ }
     try{ stuRef.onDisconnect().update({ online:false, lastSeen:TS }); }catch(e){}
@@ -7708,7 +7708,7 @@ init3D();
   /* rooms/{code}/messages child_added → 기존 toast() 로 표시 (renderMessenger·대화 상태머신 무관) */
   function fbSubscribeMessages(){
     const {code, sid} = G.fb;
-    const ref = FB.db.ref('rooms/'+code+'/messages');
+    const ref = FB.db.ref('ws/rooms/'+code+'/messages');
     const seen = new Set();
     ref.once('value').then(snap=>{
       snap.forEach(ch=>{ seen.add(ch.key); });     /* 입장 이전 백로그는 무시 */
@@ -7726,7 +7726,7 @@ init3D();
     if(G.mode!=='firebase' || !G.fb || !G.fb.joined || !FB.db) return;
     try{
       const {code, sid} = G.fb;
-      const base = FB.db.ref('rooms/'+code+'/students/'+sid);
+      const base = FB.db.ref('ws/rooms/'+code+'/students/'+sid);
       const items = G.items||[];
       const done = items.filter(i=>i.done).length;
       const arrived = items.filter(i=>i.arrived).length;
@@ -7743,7 +7743,7 @@ init3D();
     if(G.mode!=='firebase' || !G.fb || !G.fb.joined || !FB.db) return;
     try{
       const {code, sid} = G.fb;
-      const base = FB.db.ref('rooms/'+code+'/students/'+sid);
+      const base = FB.db.ref('ws/rooms/'+code+'/students/'+sid);
       /* 완주 표시는 보고서 저장 성공 여부와 독립이고 멱등이다. 트랜잭션 콜백 안에 두면
          왕복이 끝나기 전에 탭을 닫은 학생이 report 있음 + status='playing'으로 남아
          강사의 `status==='done' && report` 필터에서 통째로 빠진다(보고서 화면 직후 탭을
@@ -7789,8 +7789,8 @@ init3D();
       if(html){ body.innerHTML = html; wrap.style.display=''; } else { wrap.style.display='none'; }
     };
     try{
-      FB.db.ref('rooms/'+code+'/debrief/'+sid).on('value', s=>{ G.fb._dbMine=s.val(); render(); });
-      FB.db.ref('rooms/'+code+'/debrief/_class').on('value', s=>{ G.fb._dbClass=s.val(); render(); });
+      FB.db.ref('ws/rooms/'+code+'/debrief/'+sid).on('value', s=>{ G.fb._dbMine=s.val(); render(); });
+      FB.db.ref('ws/rooms/'+code+'/debrief/_class').on('value', s=>{ G.fb._dbClass=s.val(); render(); });
     }catch(e){}
   };
 

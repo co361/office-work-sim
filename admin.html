@@ -454,13 +454,13 @@ if(CFG.url && CFG.pw) $('btnLogin').click();
    esc()/csvEsc()/dl()/$() 는 위 스크립트의 유틸을 그대로 재사용.
    ============================================================ */
 const FIREBASE_CFG = {
-  apiKey: "AIzaSyCCYlmrWJgVIYx0pF3QdsHcoCcxBL3qDEM",
-  authDomain: "office-sim-2004f.firebaseapp.com",
-  databaseURL: "https://office-sim-2004f-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "office-sim-2004f",
-  storageBucket: "office-sim-2004f.firebasestorage.app",
-  messagingSenderId: "436118247639",
-  appId: "1:436118247639:web:cd8025be3d99d88588f892"
+  apiKey: "AIzaSyAvar2Tt5tQaZH4nTP-oLso9yKGXM0Jx5U",
+  authDomain: "team-work-sim.firebaseapp.com",
+  databaseURL: "https://team-work-sim-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "team-work-sim",
+  storageBucket: "team-work-sim.firebasestorage.app",
+  messagingSenderId: "960526002083",
+  appId: "1:960526002083:web:6bc8ed577abbcd55f95c16"
 };
 
 let fbApp=null, fbAuth=null, fbDB=null, fbAdminUid=null;
@@ -535,6 +535,18 @@ function fbInit(){
 /* 강사 직접 발급(구 fbIssueTeacher)은 제거됨 — 강사는 teacher.html에서 셀프 가입 후
    아래 목록에서 [승인+키지급](fbApproveWithKey)으로 승인·키지급한다. */
 
+/* ---------- 통합 강사 신분증 (co-work-sim 과 공유하는 instructors/) ----------
+   instructors/ 는 team-work-sim 에서 3게임이 함께 쓴다. 스키마가 두 벌 공존한다.
+     · 신(통합): profile/{name,email} · approval/{status} · games/worksim/{licenseKey}
+     · 구(WORK SIM 단독): 루트 평면 필드 status·licenseKey·displayName
+   읽기는 신 경로 우선 OR 폴백, 쓰기는 신·구 경로를 한 update 로 동시에(이행기 양방향 호환).
+   ⚠ 통합 규칙에는 instructors/$uid 통짜 .write 가 없다 — 반드시 update() + 하위 경로. */
+function wsRoomCodes(idx){
+  return Object.keys(idx||{}).filter(c=>{
+    const v = idx[c];
+    return v === true || (v && typeof v === 'object' && v.game === 'worksim');
+  });
+}
 /* ---------- 강사 목록 ---------- */
 async function fbLoadInstructors(){
   const tb=$('fbTTable').querySelector('tbody');
@@ -543,9 +555,12 @@ async function fbLoadInstructors(){
     const snap = await fbDB.ref('instructors').once('value');
     fbInstructors=[];
     snap.forEach(ch=>{ const v=ch.val()||{};
-      fbInstructors.push({uid:ch.key, email:v.email||'', displayName:v.displayName||v.name||'',
-        status:v.status||'approved', licenseKey:v.licenseKey||'',
-        roomCount: v.rooms? Object.keys(v.rooms).length : 0,
+      fbInstructors.push({uid:ch.key,
+        email: (v.profile&&v.profile.email) || v.email || '',
+        displayName: v.displayName || (v.profile&&v.profile.name) || v.name || '',
+        status: (v.approval&&v.approval.status) || v.status || 'approved',
+        licenseKey: (v.games&&v.games.worksim&&v.games.worksim.licenseKey) || v.licenseKey || '',
+        roomCount: wsRoomCodes(v.rooms).length,
         credit:{balance:0, spent:0}}); });
     await fbLoadCredits();
     fbRenderInstructors();
@@ -566,7 +581,7 @@ async function fbLoadInstructors(){
 async function fbLoadCredits(){
   await Promise.all(fbInstructors.map(async t=>{
     try{
-      const cs = await fbDB.ref('credits/'+t.uid).once('value');
+      const cs = await fbDB.ref('ws/credits/'+t.uid).once('value');
       const c = cs.val()||{};
       t.credit = {balance:+c.balance||0, spent:+c.spent||0};
     }catch(_){ t.credit = t.credit || {balance:0, spent:0}; }
@@ -667,8 +682,12 @@ async function fbApproveWithKey(uid){
   const key = prompt('이 강사에게 지급할 AI 접속키(라이선스 키)를 입력하세요.\n(예: EDU-XXXX… 형식. 비워두면 승인만 하고 키는 나중에 지급)');
   if(key === null) return; // 취소
   const k=(key||'').trim();
-  const update={ status:'approved' };
-  if(k) update.licenseKey=k;
+  /* 신 경로(approval/games.worksim) + 구 루트 필드를 한 update 로 원자 기록.
+     한 배치의 모든 경로가 관리자 전용이라 §5-5(권한 혼재 시 전체 거부)에 걸리지 않는다. */
+  const TS = firebase.database.ServerValue.TIMESTAMP;
+  const update={ 'approval/status':'approved', 'approval/decidedAt':TS,
+                 'approval/decidedBy': fbAdminUid||'admin', status:'approved' };
+  if(k){ update['games/worksim/licenseKey']=k; update.licenseKey=k; }
   try{
     await fbDB.ref('instructors/'+uid).update(update);
     const t=fbInstructors.find(x=>x.uid===uid); if(t){ t.status='approved'; if(k) t.licenseKey=k; }
@@ -685,13 +704,13 @@ async function fbTopupCredit(uid){
   if(!(amount>0)){ alert('양의 정수를 입력하세요.'); return; }
   const note = prompt('메모(입금자/금액/사유 등, 선택)') || '';
   try{
-    const res = await fbDB.ref('credits/'+uid).transaction(c=>{
+    const res = await fbDB.ref('ws/credits/'+uid).transaction(c=>{
       c = c || {balance:0, spent:0};
       c.balance = (c.balance||0) + amount;
       return c;
     });
     const after = (res.snapshot && res.snapshot.val()) || {balance:amount, spent:0};
-    await fbDB.ref('creditLog/'+uid).push({
+    await fbDB.ref('ws/creditLog/'+uid).push({
       type:'topup', amount, balanceAfter: after.balance||0,
       note, by: fbAdminUid||'admin', at: firebase.database.ServerValue.TIMESTAMP
     });
@@ -708,7 +727,7 @@ async function fbChangeKey(uid){
   const k=(key||'').trim();
   if(!k){ alert('키가 비어 있어 변경을 취소했습니다. (회수하려면 [키 회수]를 사용하세요)'); return; }
   try{
-    await fbDB.ref('instructors/'+uid).update({ licenseKey:k });
+    await fbDB.ref('instructors/'+uid).update({ 'games/worksim/licenseKey':k, licenseKey:k });
     const t=fbInstructors.find(x=>x.uid===uid); if(t) t.licenseKey=k;
     fbLoadInstructors();
     alert('키 변경 완료');
@@ -717,7 +736,8 @@ async function fbChangeKey(uid){
 async function fbRevokeKey(uid){
   if(!confirm('이 강사의 AI 접속키를 회수(삭제)하시겠습니까?\n회수하면 이 강사가 새로 만드는 방은 오프라인 채점으로 동작합니다.')) return;
   try{
-    await fbDB.ref('instructors/'+uid+'/licenseKey').remove();
+    // 신·구 두 경로를 함께 지운다. 한쪽만 지우면 instKey() OR 폴백이 남은 키를 다시 집는다.
+    await fbDB.ref('instructors/'+uid).update({ 'games/worksim/licenseKey':null, licenseKey:null });
     const t=fbInstructors.find(x=>x.uid===uid); if(t) t.licenseKey='';
     fbLoadInstructors();
     alert('키 회수 완료');
@@ -726,7 +746,9 @@ async function fbRevokeKey(uid){
 async function fbToggle(uid, to){
   if(!confirm((to==='suspended'?'정지':'해제')+' 하시겠습니까?')) return;
   try{
-    await fbDB.ref('instructors/'+uid+'/status').set(to);
+    /* 신·구 경로를 한 update 로 원자 처리. 쪼개면 approval/status='approved' 가 남은 채
+       구 status 만 'suspended' 가 되어, 신 경로 우선 폴백이 정지를 무시한다(정지 무력화). */
+    await fbDB.ref('instructors/'+uid).update({ 'approval/status':to, status:to });
     const t=fbInstructors.find(x=>x.uid===uid); if(t) t.status=to;
     fbRenderInstructors();
   }catch(e){ alert('실패: '+fbErr(e)); }
@@ -740,7 +762,7 @@ async function fbLoadRooms(){
     let rooms=[];
     try{
       /* /rooms 전체 읽기 — 관리자 목록 읽기 규칙이 있을 때만 성공 */
-      const snap = await fbDB.ref('rooms').once('value');
+      const snap = await fbDB.ref('ws/rooms').once('value');
       snap.forEach(ch=>{ rooms.push(fbRoomRow(ch.key, (ch.val()||{}).meta||{})); });
     }catch(e){
       /* 폴백: 알려진 강사들의 rooms 인덱스 순회 → 각 meta read(auth!=null 허용) */
@@ -761,8 +783,8 @@ async function fbRoomsViaIndex(){
     let idx;
     try{ idx = await fbDB.ref('instructors/'+t.uid+'/rooms').once('value'); }catch(_){ continue; }
     if(!idx.exists()) continue;
-    for(const code of Object.keys(idx.val()||{})){
-      try{ const ms=await fbDB.ref('rooms/'+code+'/meta').once('value'); if(ms.exists()) out.push(fbRoomRow(code, ms.val())); }catch(_){ }
+    for(const code of wsRoomCodes(idx.val())){   // 공유 인덱스에서 WORK SIM 방만
+      try{ const ms=await fbDB.ref('ws/rooms/'+code+'/meta').once('value'); if(ms.exists()) out.push(fbRoomRow(code, ms.val())); }catch(_){ }
     }
   }
   return out;
@@ -787,7 +809,7 @@ function fbRenderRooms(){
 }
 async function fbForceEnd(code){
   if(!confirm(code+' 방을 강제 종료할까요? (meta.status = ended)')) return;
-  try{ await fbDB.ref('rooms/'+code+'/meta/status').set('ended'); fbLoadRooms(); }
+  try{ await fbDB.ref('ws/rooms/'+code+'/meta/status').set('ended'); fbLoadRooms(); }
   catch(e){ alert('실패: '+fbErr(e)); }
 }
 
