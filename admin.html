@@ -372,8 +372,8 @@ function renderStats(rows){
     '<b style="font-size:13px">🏆 '+g+' 최종 순위 ('+ranked.length+'명 제출 기준 — 진행 중엔 새로고침)</b>'+
     '<table style="margin-top:8px"><thead><tr><th style="width:60px">순위</th><th>이름</th><th>부서</th><th>총점</th><th>등급</th><th>문제해결</th><th>제출</th></tr></thead><tbody>'+
     ranked.map((r,i)=>'<tr><td style="font-weight:800">'+medal(i)+'</td><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.dept)+'</td>'+
-      '<td class="mono"><b>'+r.total+'</b></td><td class="mono">'+r.grade+'</td>'+
-      '<td class="mono">'+(safe(r.detail).psScore!=null?safe(r.detail).psScore:'—')+'</td>'+
+      '<td class="mono"><b>'+(+r.total||0)+'</b></td><td class="mono">'+esc(r.grade)+'</td>'+
+      '<td class="mono">'+(safe(r.detail).psScore!=null?(+safe(r.detail).psScore||0):'—')+'</td>'+
       '<td class="mono">'+String(r.submittedAt).slice(11,16)+'</td></tr>').join('')+
     '</tbody></table>';
 }
@@ -384,8 +384,8 @@ function renderReports(){
   $('rTable').querySelector('tbody').innerHTML = rows.map((r,i)=>{
     const d = safe(r.detail);
     return '<tr onclick="showDetail('+i+')" style="cursor:pointer"><td><b>'+esc(r.name)+'</b></td><td>'+esc(r.group)+'</td><td>'+esc(r.dept)+'</td><td>'+esc(r.culture)+'</td>'+
-    '<td class="mono"><b>'+r.total+'</b></td><td class="mono">'+r.grade+'</td>'+
-    '<td class="mono">'+(d.doneCount!=null? d.doneCount+'/'+d.arrivedCount : '—')+'</td>'+
+    '<td class="mono"><b>'+(+r.total||0)+'</b></td><td class="mono">'+esc(r.grade)+'</td>'+
+    '<td class="mono">'+(d.doneCount!=null? (+d.doneCount||0)+'/'+(+d.arrivedCount||0) : '—')+'</td>'+
     '<td class="mono">'+String(r.submittedAt).slice(0,16).replace('T',' ')+'</td></tr>';
   }).join('') || '<tr><td colspan="9" style="color:#8b93a5;text-align:center;padding:26px">보고서가 없습니다</td></tr>';
 }
@@ -393,9 +393,9 @@ function safe(s){ try{ return JSON.parse(s)||{}; }catch(e){ return {}; } }
 /* 세션 성장 곡선 — 상세 보고서용 렌더 (소통·판단 2축) */
 function growthOne(g){
   if(!g) return '—';
-  if(g.verdict==='hold') return '보류(표본 '+g.n+'건)';
+  if(g.verdict==='hold') return '보류(표본 '+(+g.n||0)+'건)';
   const v = g.verdict==='up'?'↗ 향상':g.verdict==='down'?'↘ 하락':'→ 정체';
-  return v+' '+g.early+'→'+g.late+' ('+(g.delta>0?'+':'')+g.delta+')';
+  return v+' '+(+g.early||0)+'→'+(+g.late||0)+' ('+(g.delta>0?'+':'')+(+g.delta||0)+')';
 }
 function growthDetail(gr){
   if(!gr) return '';
@@ -407,9 +407,9 @@ function growthDetail(gr){
 function showDetail(i){
   const r = repFiltered()[i], sk = safe(r.skills), d = safe(r.detail);
   $('dlTitle').textContent = r.name + ' — ' + r.group + ' 상세 보고서';
-  let h = '<div style="font-size:13px;color:#5b6474;margin-bottom:12px">'+esc(r.dept)+' · '+esc(r.culture)+' · 총점 <b style="font-size:17px;color:#1c2333">'+esc(r.total)+'</b> ('+esc(r.grade)+' 등급) · 처리 '+ (d.doneCount||0)+'/'+(d.arrivedCount||0)+'건</div>';
+  let h = '<div style="font-size:13px;color:#5b6474;margin-bottom:12px">'+esc(r.dept)+' · '+esc(r.culture)+' · 총점 <b style="font-size:17px;color:#1c2333">'+esc(r.total)+'</b> ('+esc(r.grade)+' 등급) · 처리 '+ (+d.doneCount||0)+'/'+(+d.arrivedCount||0)+'건</div>';
   if(d.school || d.phone) h += '<div style="font-size:12.5px;color:#5b6474;margin:-6px 0 12px">소속 <b>'+(d.school?esc(d.school):'—')+'</b> · 전화번호 <b>'+(d.phone?esc(d.phone):'—')+'</b></div>';
-  h += SKILL_ORDER.map(n=>'<div class="skillbar"><span>'+n+'</span><div class="bar"><div class="fill" style="width:'+(sk[n]||0)+'%"></div></div><b>'+(sk[n]||0)+'</b></div>').join('');
+  h += SKILL_ORDER.map(n=>'<div class="skillbar"><span>'+esc(n)+'</span><div class="bar"><div class="fill" style="width:'+(+sk[n]||0)+'%"></div></div><b>'+(+sk[n]||0)+'</b></div>').join('');
   const list = (t,arr)=> arr&&arr.length ? '<h4>'+t+'</h4><ul>'+arr.map(x=>'<li>'+(typeof x==='object'? (esc(x.subj)+' — '+esc(x.score)+(t.includes('작업')?'%':'점')) : esc(x))+'</li>').join('')+'</ul>' : '';
   h += growthDetail(d.growth);
   h += list('이메일 첨삭', d.emails) + list('실무 작업 정확도', d.works) + list('잘한 점', d.goods) + list('개선점', d.fixes) + list('놓친 업무', d.missed);

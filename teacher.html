@@ -698,7 +698,7 @@ function renderMonitor(){
     || (entries.length? '' : '아직 입장한 학생이 없습니다. 방을 [시작]하고 참가코드를 공유하세요.');
   $('sgrid').innerHTML = entries.map(([sid,s])=>{
     const prog = s.progress||{}, live=s.live||{}, rep=s.report||{};
-    const done_=prog.done||0, arr=prog.arrived||0, pct = arr? Math.round(done_/arr*100):0;
+    const done_=+prog.done||0, arr=+prog.arrived||0, pct = arr? Math.round(done_/arr*100):0;
     const on = isOnline(s);
     const badge = (s.status==='done' && rep.total!=null)
       ? '<span class="badge">'+esc(rep.grade||'')+' · '+esc(rep.total)+'점</span>' : '';
@@ -706,8 +706,8 @@ function renderMonitor(){
       '<div class="top"><span class="dot'+(on?' on':'')+'"></span><span class="nm">'+esc(s.name||'학생')+'</span>'+badge+'</div>'+
       '<span class="tag '+({playing:'t-playing',done:'t-done',left:'t-left'}[s.status]||'t-playing')+'">'+(SSLABEL[s.status]||'진행중')+'</span>'+
       '<div class="pbar"><i style="width:'+pct+'%"></i></div>'+
-      '<div class="mini"><span>진척 '+done_+'/'+arr+'</span><span>퀘스트 '+(prog.quests||0)+'</span>'+
-        (live.actAvg!=null?'<span>판단 '+live.actAvg+'</span>':'')+(live.commAvg!=null?'<span>소통 '+live.commAvg+'</span>':'')+
+      '<div class="mini"><span>진척 '+done_+'/'+arr+'</span><span>퀘스트 '+(+prog.quests||0)+'</span>'+
+        (live.actAvg!=null?'<span>판단 '+(+live.actAvg||0)+'</span>':'')+(live.commAvg!=null?'<span>소통 '+(+live.commAvg||0)+'</span>':'')+
         '</div></div>';
   }).join('');
 }
@@ -759,7 +759,7 @@ function renderReport(d, s, sid, cmt){
   const sk = d.skills||{};
   const skillArr = SKILL_ORDER.map(n=>[n, sk[n]||0]);
   const bars = SKILL_ORDER.map(n=>
-    '<div class="skillbar"><span>'+esc(n)+'</span><div class="bar"><div class="fill" style="width:'+(sk[n]||0)+'%"></div></div><b>'+(sk[n]||0)+'</b></div>').join('');
+    '<div class="skillbar"><span>'+esc(n)+'</span><div class="bar"><div class="fill" style="width:'+(+sk[n]||0)+'%"></div></div><b>'+(+sk[n]||0)+'</b></div>').join('');
   const list=(t,arr,unit)=> (arr&&arr.length)?'<h4 class="sh">'+t+'</h4><ul class="rlist">'+arr.map(x=>
       typeof x==='object'?'<li>'+esc(x.subj)+' — '+esc(x.score)+(unit||'')+'</li>':'<li>'+esc(x)+'</li>').join('')+'</ul>':'';
   const h =
